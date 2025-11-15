@@ -1,0 +1,64 @@
+{
+  "name": "Maple Grove Volunteer Fire Department",
+  "type": "volunteer",
+  "location": {
+    "state": "Pennsylvania",
+    "county": "Lancaster County",
+    "city": "Maple Grove",
+    "service_area_population": 4500,
+    "zip_code": "17543"
+  },
+  "organization_details": {
+    "founded": "1952",
+    "tax_id": "23-1234567",
+    "501c3_status": true,
+    "annual_budget": 185000,
+    "volunteers": 32,
+    "paid_staff": 0
+  },
+  "needs": [
+    "Self-Contained Breathing Apparatus (SCBA) - 6 units",
+    "Thermal imaging camera",
+    "Turnout gear for 10 firefighters",
+    "Vehicle extrication equipment (Jaws of Life)",
+    "AED units for all apparatus",
+    "Firefighter I & II certification training"
+  ],
+  "equipment_inventory": {
+    "fire_engines": 2,
+    "ambulances": 1,
+    "utility_vehicles": 2,
+    "scba_sets": 8,
+    "condition": "Primary engine is 18 years old. Most SCBA equipment is over 10 years old and approaching end of certified life. Turnout gear for 40% of active members exceeds NFPA replacement guidelines."
+  },
+  "service_stats": {
+    "annual_fire_calls": 52,
+    "annual_ems_calls": 143,
+    "mutual_aid_responses": 38,
+    "average_response_time_minutes": 6.5
+  },
+  "mission": "To protect the lives and property of the Maple Grove community through professional emergency response services, fire prevention education, and community outreach. As an all-volunteer organization, we are committed to excellence in emergency services while maintaining fiscal responsibility and serving our neighbors with dedication.",
+  "community_impact": "Our department serves a rural community of 4,500 residents spread across 22 square miles. We respond to an average of 195 emergency calls per year, including structure fires, vehicle accidents, medical emergencies, and mutual aid requests to neighboring departments. Without adequate equipment and training, our response capabilities are compromised, potentially increasing response times and putting both firefighters and community members at risk. Recent incidents have highlighted critical equipment gaps, particularly outdated SCBA equipment and insufficient protective gear.",
+  "grant_preferences": {
+    "focus_areas": [
+      "Equipment acquisition and replacement",
+      "Firefighter training and certification",
+      "Apparatus and vehicle replacement",
+      "Station facility improvements"
+    ],
+    "max_match_percentage": 20,
+    "preferred_grant_size": "15000-150000"
+  },
+  "recent_accomplishments": [
+    "Achieved ISO Class 5 rating (2022)",
+    "100% volunteer CPR/First Aid certification (2023)",
+    "Implemented junior firefighter program (2023)",
+    "Mutual aid agreement with 6 surrounding departments"
+  ],
+  "challenges": [
+    "Aging equipment requiring costly maintenance",
+    "Volunteer recruitment and retention in rural area",
+    "Limited budget for capital improvements",
+    "Increasing call volume (15% increase over 5 years)"
+  ]
+}
