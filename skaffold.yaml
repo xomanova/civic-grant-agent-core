@@ -54,10 +54,8 @@ profiles:
             manual:
               - src: "backend/app.py"
                 dest: /app
-              - src: "agent_config.py"
+              - src: "backend/agent_config.py"
                 dest: /app
-              - src: "agents/**/*.py"
-                dest: /app/agents
               - src: "tools/**/*.py"
                 dest: /app/tools
               - src: "utils/**/*.py"

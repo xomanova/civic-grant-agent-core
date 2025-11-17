@@ -10,8 +10,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy backend code
 COPY backend/app.py .
 
-# Copy agent configuration from parent directory
-COPY agents ./agents
+# Copy agent configuration
+COPY backend/agent_config.py .
 COPY tools ./tools
 COPY utils ./utils
 
