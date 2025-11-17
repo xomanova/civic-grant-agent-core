@@ -1,0 +1,71 @@
+apiVersion: skaffold/v4beta13
+kind: Config
+metadata:
+  name: civic-grant-agent
+build:
+  artifacts:
+    - image: civic-grant-agent-frontend
+      context: frontend
+      docker:
+        dockerfile: Dockerfile
+    - image: civic-grant-agent-backend
+      context: .
+      docker:
+        dockerfile: backend/Dockerfile
+  local:
+    push: false
+deploy:
+  kubectl: {}
+manifests:
+  rawYaml:
+    - k8s/deployment.yaml
+    - k8s/service.yaml
+    - k8s/secret.yaml
+portForward:
+  - resourceType: service
+    resourceName: civic-grant-agent-frontend
+    namespace: default
+    port: 3000
+    localPort: 3000
+  - resourceType: service
+    resourceName: civic-grant-agent-backend
+    namespace: default
+    port: 8000
+    localPort: 8000
+profiles:
+  - name: dev
+    activation:
+      - command: dev
+    build:
+      artifacts:
+        - image: civic-grant-agent-frontend
+          context: frontend
+          sync:
+            manual:
+              - src: "app/**/*.tsx"
+                dest: /app/app
+              - src: "app/**/*.ts"
+                dest: /app/app
+        - image: civic-grant-agent-backend
+          context: .
+          docker:
+            dockerfile: backend/Dockerfile
+          sync:
+            manual:
+              - src: "backend/app.py"
+                dest: /app
+              - src: "agent_config.py"
+                dest: /app
+              - src: "agents/**/*.py"
+                dest: /app/agents
+              - src: "tools/**/*.py"
+                dest: /app/tools
+              - src: "utils/**/*.py"
+                dest: /app/utils
+    deploy:
+      kubectl: {}
+    manifests:
+      rawYaml:
+        - k8s/deployment.yaml
+        - k8s/service.yaml
+        - k8s/secret.yaml

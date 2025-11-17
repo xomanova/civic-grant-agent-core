@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: civic-grant-agent-frontend
+  labels:
+    app: civic-grant-agent
+    tier: frontend
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 3000
+    targetPort: 3000
+    protocol: TCP
+    name: http
+  selector:
+    app: civic-grant-agent
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: civic-grant-agent-backend
+  labels:
+    app: civic-grant-agent
+    tier: backend
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8000
+    targetPort: 8000
+    protocol: TCP
+    name: http
+  selector:
+    app: civic-grant-agent
