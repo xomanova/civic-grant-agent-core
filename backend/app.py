@@ -22,7 +22,7 @@ from google.adk.sessions import InMemorySessionService
 from google.genai import types
 import sys
 sys.path.append('/app')
-from agent_config import civic_grant_agent
+from agents.agent_config import civic_grant_agent
 
 # Verify API key
 if not os.getenv("GOOGLE_API_KEY"):
