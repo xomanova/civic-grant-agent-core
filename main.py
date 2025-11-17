@@ -23,7 +23,7 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('firehouse_ai.log'),
+        logging.FileHandler('civic_grant_agent.log'),
         logging.StreamHandler(sys.stdout)
     ]
 )
@@ -279,7 +279,7 @@ def main():
     except Exception as e:
         logger.error(f"Fatal error: {e}", exc_info=True)
         print(f"\nError: {e}")
-        print("Check firehouse_ai.log for details.")
+        print("Check civic_grants_agent.log for details.")
         return 1
 
 

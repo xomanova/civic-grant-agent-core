@@ -53,107 +53,129 @@ Similarly, existing open-source projects target different audiences:
 
 ## 🏗️ Architecture
 
-This system uses three specialized AI agents working in sequence, powered by Google's Gemini models:
+This system uses a **multi-agent pipeline** powered by Google's ADK `SequentialAgent`:
 
-1. **GrantScout Agent (Researcher)** - Proactively searches for grant opportunities using built-in Google Search tools
-2. **GrantValidator Agent (Analyst)** - Validates eligibility using custom tools and session memory
-3. **GrantWriter Agent (Drafter)** - Generates professional grant narratives using Gemini's advanced language capabilities
+**Pipeline Flow:**
+```
+Department Profile → GrantScout → GrantValidator → GrantWriter → Complete Draft
+```
+
+### Agent 1: GrantScout (Researcher)
+- **Tools**: Google Search
+- **Purpose**: Discovers grant opportunities from the web
+- **Output**: JSON array of potential grants with URLs, descriptions, and deadlines
+
+### Agent 2: GrantValidator (Analyst)
+- **Tools**: Built-in Code Executor
+- **Purpose**: Analyzes eligibility using Python scoring algorithm
+- **Output**: Validated grants ranked by eligibility score (0.0-1.0)
+
+### Agent 3: GrantWriter (Drafter)
+- **Tools**: Gemini language model (temperature=0.7)
+- **Purpose**: Generates professional grant application narratives
+- **Output**: Complete grant draft with all required sections
+
+**State Management:** Each agent's output is stored in session state and automatically injected into the next agent's context using placeholder variables (e.g., `{grant_opportunities}`, `{validated_grants}`).
 
 ## Agent Flow Diagram
 ```mermaid
-graph TD
-    subgraph "User Input (Local Config)"
-        A[Department Profile JSON] -- "|e.g., department_config.json|" --> B
-    end
-
-    subgraph "Agent Orchestrator (Main Program)"
-        B[Start Agent Chain]
-        B --> C{Trigger GrantScout}
-    end
-
-    subgraph "Agent 1: GrantScout (Researcher)"
-        C --> D(LLM: Identify Search Queries)
-        D -- "|Google Search Tool|" --> E[Google Search API]
-        E -- "|List of Grant URLs|" --> F[Search Results]
-        F --> G{Output: Potential Grant URLs}
-    end
-
-    subgraph "Agent 2: GrantValidator (Analyst)"
-        G --> H{Input: Potential Grant URLs & Department Profile}
-        H -- "|Iterate through URLs|" --> I(LLM: Extract Grant Details)
-        I -- "|Custom Tool: EligibilityChecker|" --> J[External HTTP Request or PDF Parser]
-        J -- "|Eligibility Status|" --> K(LLM: Compare to Profile)
-        K -- "|Filter & Prioritize|" --> L{"Output: Validated & Prioritized Grants (JSON)"}
-    end
-
-    subgraph "Agent 3: GrantWriter (Drafter)"
-        L --> M{Input: Validated Grant Details & Department Profile}
-        M -- "|Gemini LLM|" --> N(LLM: Generate Grant Narrative Draft)
-        N -- "|Synthesize Sections|" --> O{"Output: Draft Grant Application (Markdown/Text)"}
-    end
-
-    subgraph "Output"
-        O --> P[Grant Application Draft File]
-    end
-
-    subgraph "Memory & Context"
-        DepartmentProfile["Shared Session Memory:
-            - Department Name
-            - Type (Volunteer/Paid)
-            - Needs (Equipment, Training)
-            - Location
-            - Mission Statement Excerpt
-        "]
-        DepartmentProfile --> H
-        DepartmentProfile --> M
-    end
-
-    style DepartmentProfile fill:#e0f2f7,stroke:#333,stroke-width:2px,color:#000
-    style E fill:#f0f8ff,stroke:#666,stroke-width:1px
-    style J fill:#f0f8ff,stroke:#666,stroke-width:1px
+graph LR
+    A[User Input:<br/>Department Profile] --> B[SequentialAgent Pipeline]
+    B --> C[Agent 1: GrantScout<br/>Google Search]
+    C -->|grant_opportunities| D[Agent 2: GrantValidator<br/>Code Execution]
+    D -->|validated_grants| E[Agent 3: GrantWriter<br/>Gemini Text Generation]
+    E -->|grant_draft| F[Complete Application]
+    
+    style A fill:#e1f5ff
+    style C fill:#fff3cd
+    style D fill:#d4edda
+    style E fill:#f8d7da
+    style F fill:#d1ecf1
 ```
 
 ## 📋 Key Features
+
+### Multi-Agent Pipeline Architecture
+- **SequentialAgent Orchestration**: Agents automatically pass outputs to the next agent in the pipeline
+- **State Management**: Session state stores intermediate results using `output_key` parameters
+- **Variable Injection**: Automatic placeholder replacement (e.g., `{grant_opportunities}`)
 
 ### Agent 1: GrantScout (Researcher)
 - **Built-in Tools**: Uses Google Search API to find grant opportunities
 - **Smart Queries**: Generates targeted search queries based on department needs
 - **Comprehensive Coverage**: Searches federal, state, and corporate grant programs
+- **Output**: JSON array of grant opportunities stored in `grant_opportunities` state key
 
 ### Agent 2: GrantValidator (Analyst)
-- **Custom Tools**: Implements `check_eligibility()` function to validate grant requirements
-- **Session Memory**: Uses department profile context to filter opportunities
-- **Prioritization**: Ranks grants by relevance and deadline urgency
+- **Code Execution**: Uses Python to systematically score grant eligibility
+- **Multi-Criteria Analysis**: Evaluates 5 dimensions (type, location, needs, budget, nonprofit status)
+- **Automated Scoring**: Calculates eligibility scores (0.0-1.0) programmatically
+- **Output**: Validated and ranked grants stored in `validated_grants` state key
 
 ### Agent 3: GrantWriter (Drafter)
 - **Gemini-Powered**: Leverages Gemini's advanced language model for high-quality drafts
-- **Context-Aware**: Uses department profile to personalize narratives
-- **Structured Output**: Generates complete grant applications with all required sections
+- **Context-Aware**: Uses department profile and validated grants from previous agents
+- **Structured Output**: Generates complete grant applications with 7 required sections
+- **Output**: Professional draft stored in `grant_draft` state key
 
 ## 🚀 Getting Started
+
+> **New!** This project uses Google's Agent Developer Kit (ADK) with a multi-agent pipeline architecture.
 
 ### Prerequisites
 
 - Python 3.9+
-- Google Cloud Project with Gemini API access
-- API Keys (configured in `.env` file)
+- Google AI Studio API key ([Get one here](https://aistudio.google.com/app/apikey))
+- No additional cloud setup required!
 
-### Installation
+### Quick Start (5 Minutes)
 
 ```bash
-# Clone the repository
+# 1. Clone and install
 git clone https://github.com/xomanova/civic-grant-agent-core.git
 cd civic-grant-agent-core
-
-# Install dependencies
 pip install -r requirements.txt
 
-# Configure environment
+# 2. Add your API key
 cp .env.example .env
-# Edit .env with your API keys
+# Edit .env and add your GOOGLE_API_KEY
+
+# 3. Launch the interactive UI!
+python run_adk.py
+
+# OR run the automated pipeline:
+python run_pipeline.py
 ```
 
-### Configuration
+**The ADK web UI will open in your browser!** Chat with the agent naturally to find grants and draft applications.
+
+📖 **Detailed Setup**: See [ADK_SETUP.md](ADK_SETUP.md) for complete instructions and troubleshooting.
+
+### Usage Options
+
+#### Option 1: Interactive Web UI (Recommended)
+```bash
+python run_adk.py
+```
+- Chat with the agent conversationally
+- It will collect your department profile through natural dialogue
+- Agents execute automatically in sequence
+- View results in real-time
+
+#### Option 2: Automated Pipeline
+```bash
+# Create department profile
+cp examples/sample_department_profile.json department_config.json
+# Edit with your organization's information
+
+# Run the pipeline
+python run_pipeline.py
+```
+- Fully automated execution
+- Saves results to `output/` directory
+- Best for batch processing or scheduled runs
+
+### Configuration (Optional)
 
 Create a department profile in `department_config.json`:
 
@@ -219,11 +241,14 @@ civic-grant-agent-core/
 
 This project demonstrates proficiency with Google's Agent Developer Kit:
 
-- ✅ **Built-in Tools**: Google Search tool in GrantScout
-- ✅ **Custom Tools**: Eligibility checker in GrantValidator
-- ✅ **Sessions & Memory**: Department profile state management across agents
+- ✅ **Multi-Agent Architecture**: Uses `SequentialAgent` to orchestrate three specialized agents
+- ✅ **Built-in Tools**: Google Search tool in GrantScout agent
+- ✅ **Code Execution**: `BuiltInCodeExecutor` in GrantValidator for systematic eligibility analysis
+- ✅ **State Management**: Agents pass outputs via session state using `output_key` parameters
+- ✅ **Variable Injection**: Automatic placeholder replacement (`{grant_opportunities}`, `{validated_grants}`)
 - ✅ **Effective Use of Gemini**: GrantWriter leverages Gemini for high-quality text generation
 - ✅ **Real-World Value**: Solves actual problem faced by volunteer fire departments
+- ✅ **Retry Configuration**: Implements `HttpRetryOptions` for API reliability
 
 ## 🌐 Deployment
 
@@ -234,8 +259,8 @@ Deploy to Google Cloud Run:
 gcloud builds submit --config deployment/cloudbuild.yaml
 
 # Or use Docker
-docker build -t firehouse-ai .
-docker run -p 8080:8080 firehouse-ai
+docker build -t civic-grants-agent .
+docker run -p 8080:8080 civic-grants-agent
 ```
 
 See `deployment/` directory for detailed deployment instructions.

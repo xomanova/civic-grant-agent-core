@@ -100,24 +100,6 @@ ENV/
 env.bak/
 venv.bak/
 
-# Spyder project settings
-.spyderproject
-.spyproject
-
-# Rope project settings
-.ropeproject
-
-# mkdocs documentation
-/site
-
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
-
-# Pyre type checker
-.pyre/
-
 # IDE
 .vscode/
 .idea/
@@ -125,18 +107,11 @@ dmypy.json
 *.swo
 *~
 
-# OS
-.DS_Store
-Thumbs.db
-
 # Project specific
 output/
 *.log
-firehouse_ai.log
-
-# Secrets and credentials
-department_config.json
-!examples/sample_department_profile.json
+civic_grants_agent.log
+local/
 
 # Docker
 *.dockerignore
