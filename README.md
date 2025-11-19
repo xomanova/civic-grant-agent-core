@@ -141,8 +141,8 @@ Deploy to Google Cloud Run:
 gcloud builds submit --config deployment/cloudbuild.yaml
 
 # Or use Docker
-docker build -t civic-grants-agent .
-docker run -p 8080:8080 civic-grants-agent
+docker build -t civic-grant-agent .
+docker run -p 8080:8080 civic-grant-agent
 ```
 
 See `deployment/` directory for detailed deployment instructions.
