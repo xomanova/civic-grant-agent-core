@@ -84,18 +84,21 @@ echo "Granting Cloud Run access to secrets..."
 PROJECT_NUMBER=$(gcloud projects describe ${PROJECT_ID} --format="value(projectNumber)")
 
 # Check if IAM binding already exists before adding
-if gcloud secrets get-iam-policy GOOGLE_API_KEY \
-    --flatten="bindings[].members" \
-    --filter="bindings.role:roles/secretmanager.secretAccessor" \
-    --format="value(bindings.members)" | grep -q "${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"; then
+# Using a simplified check to avoid potential slowdowns
+echo "Checking IAM policy binding..."
+if gcloud secrets get-iam-policy GOOGLE_API_KEY 2>/dev/null | grep -q "${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"; then
     echo -e "${GREEN}IAM binding already exists.${NC}"
 else
     echo "Adding IAM policy binding..."
-    gcloud secrets add-iam-policy-binding GOOGLE_API_KEY \
+    if gcloud secrets add-iam-policy-binding GOOGLE_API_KEY \
         --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
         --role="roles/secretmanager.secretAccessor" \
-        --condition=None
-    echo -e "${GREEN}IAM binding added successfully.${NC}"
+        --condition=None 2>&1; then
+        echo -e "${GREEN}IAM binding added successfully.${NC}"
+    else
+        echo -e "${YELLOW}Warning: Failed to add IAM binding. You may need to add it manually.${NC}"
+        echo "Run: gcloud secrets add-iam-policy-binding GOOGLE_API_KEY --member='serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com' --role='roles/secretmanager.secretAccessor'"
+    fi
 fi
 
 # Deploy using Skaffold
