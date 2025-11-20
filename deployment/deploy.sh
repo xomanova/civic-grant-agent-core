@@ -6,7 +6,7 @@ set -e
 # Configuration
 PROJECT_ID=${GOOGLE_PROJECT_ID:-"your-project-id"}
 REGION=${REGION:-"us-central1"}
-SERVICE_NAME="civic-grants-agent"
+SERVICE_NAME="civic-grant-agent"
 IMAGE_NAME="gcr.io/${PROJECT_ID}/${SERVICE_NAME}"
 
 echo "================================================"

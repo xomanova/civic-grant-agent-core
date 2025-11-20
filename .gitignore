@@ -126,6 +126,4 @@ output/
 *.log
 civic_grants_agent.log
 local/
-
-# Docker
-*.dockerignore
+k8s/secret.yaml

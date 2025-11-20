@@ -27,14 +27,14 @@ chmod +x deployment/deploy.sh
 
 ```bash
 # 1. Build the container
-docker build -t gcr.io/YOUR_PROJECT_ID/civic-grants-agent:latest .
+docker build -t gcr.io/YOUR_PROJECT_ID/civic-grant-agent:latest .
 
 # 2. Push to Container Registry
-docker push gcr.io/YOUR_PROJECT_ID/civic-grants-agent:latest
+docker push gcr.io/YOUR_PROJECT_ID/civic-grant-agent:latest
 
 # 3. Deploy to Cloud Run
-gcloud run deploy civic-grants-agent \
-  --image gcr.io/YOUR_PROJECT_ID/civic-grants-agent:latest \
+gcloud run deploy civic-grant-agent \
+  --image gcr.io/YOUR_PROJECT_ID/civic-grant-agent:latest \
   --region us-central1 \
   --platform managed \
   --allow-unauthenticated \
@@ -102,20 +102,20 @@ For production-scale deployment:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: civic-grants-agent
+  name: civic-grant-agent
 spec:
   replicas: 3
   selector:
     matchLabels:
-      app: civic-grants-agent
+      app: civic-grant-agent
   template:
     metadata:
       labels:
-        app: civic-grants-agent
+        app: civic-grant-agent
     spec:
       containers:
-      - name: civic-grants-agent
-        image: gcr.io/YOUR_PROJECT/civic-grants-agent:latest
+      - name: civic-grant-agent
+        image: gcr.io/YOUR_PROJECT/civic-grant-agent:latest
         env:
         - name: GOOGLE_API_KEY
           valueFrom:
@@ -149,10 +149,10 @@ OUTPUT_DIR=output
 
 ```bash
 # View logs
-gcloud run logs read civic-grants-agent --region us-central1
+gcloud run logs read civic-grant-agent --region us-central1
 
 # Stream logs
-gcloud run logs tail civic-grants-agent --region us-central1
+gcloud run logs tail civic-grant-agent --region us-central1
 ```
 
 ### Application Logs
@@ -168,7 +168,7 @@ Cloud Run auto-scales based on:
 
 Configure in Cloud Run:
 ```bash
-gcloud run services update civic-grants-agent \
+gcloud run services update civic-grant-agent \
   --min-instances 0 \
   --max-instances 10 \
   --concurrency 80 \
@@ -206,19 +206,19 @@ gcloud builds log [BUILD_ID]
 ### Deployment Fails
 ```bash
 # Check service status
-gcloud run services describe civic-grants-agent --region us-central1
+gcloud run services describe civic-grant-agent --region us-central1
 
 # Check revisions
-gcloud run revisions list --service civic-grants-agent --region us-central1
+gcloud run revisions list --service civic-grant-agent --region us-central1
 ```
 
 ### Runtime Errors
 ```bash
 # View logs
-gcloud run logs read civic-grants-agent --region us-central1 --limit 50
+gcloud run logs read civic-grant-agent --region us-central1 --limit 50
 
 # Check environment variables
-gcloud run services describe civic-grants-agent --region us-central1 --format yaml
+gcloud run services describe civic-grant-agent --region us-central1 --format yaml
 ```
 
 ## Performance Tuning
@@ -233,12 +233,12 @@ For better performance:
 
 ```bash
 # Deploy new version
-gcloud run deploy civic-grants-agent \
-  --image gcr.io/YOUR_PROJECT/civic-grants-agent:latest \
+gcloud run deploy civic-grant-agent \
+  --image gcr.io/YOUR_PROJECT/civic-grant-agent:latest \
   --region us-central1
 
 # Gradual rollout
-gcloud run services update-traffic civic-grants-agent \
+gcloud run services update-traffic civic-grant-agent \
   --to-revisions LATEST=50,PREVIOUS=50 \
   --region us-central1
 ```
@@ -247,8 +247,8 @@ gcloud run services update-traffic civic-grants-agent \
 
 ```bash
 # Delete Cloud Run service
-gcloud run services delete civic-grants-agent --region us-central1
+gcloud run services delete civic-grant-agent --region us-central1
 
 # Delete container images
-gcloud container images delete gcr.io/YOUR_PROJECT/civic-grants-agent:latest
+gcloud container images delete gcr.io/YOUR_PROJECT/civic-grant-agent:latest
 ```

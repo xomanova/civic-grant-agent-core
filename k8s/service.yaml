@@ -23,7 +23,7 @@ metadata:
     app: civic-grant-agent
     tier: backend
 spec:
-  type: ClusterIP
+  type: LoadBalancer
   ports:
   - port: 8000
     targetPort: 8000
