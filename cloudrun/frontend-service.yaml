@@ -30,6 +30,8 @@ spec:
         - name: NEXT_TELEMETRY_DISABLED
           value: "1"
         - name: NEXT_PUBLIC_API_URL
+          # IMPORTANT: Update this URL after deploying the backend service
+          # Replace with your actual backend URL from: gcloud run services describe civic-grant-agent-backend --region us-central1 --format 'value(status.url)'
           value: "https://civic-grant-agent-backend-PROJECT_ID.a.run.app"
         resources:
           limits:

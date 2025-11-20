@@ -82,26 +82,36 @@ fi
 echo ""
 echo "Granting Cloud Run access to secrets..."
 PROJECT_NUMBER=$(gcloud projects describe ${PROJECT_ID} --format="value(projectNumber)")
-gcloud secrets add-iam-policy-binding GOOGLE_API_KEY \
-    --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
-    --role="roles/secretmanager.secretAccessor" \
-    --condition=None \
-    2>/dev/null || echo "IAM binding already exists"
+
+# Check if IAM binding already exists before adding
+if gcloud secrets get-iam-policy GOOGLE_API_KEY \
+    --flatten="bindings[].members" \
+    --filter="bindings.role:roles/secretmanager.secretAccessor" \
+    --format="value(bindings.members)" | grep -q "${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"; then
+    echo -e "${GREEN}IAM binding already exists.${NC}"
+else
+    echo "Adding IAM policy binding..."
+    gcloud secrets add-iam-policy-binding GOOGLE_API_KEY \
+        --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+        --role="roles/secretmanager.secretAccessor" \
+        --condition=None
+    echo -e "${GREEN}IAM binding added successfully.${NC}"
+fi
 
 # Deploy using Skaffold
 echo ""
 echo "================================================"
 echo "Deploying to Cloud Run with Skaffold..."
-echo "Region: ${REGION}"
+echo "Region: ${REGION} (configured in skaffold.yaml)"
 echo "Project: ${PROJECT_ID}"
 echo "================================================"
 echo ""
 
 # Run skaffold with cloudrun profile
+# Note: Region is specified in skaffold.yaml, not as a CLI argument
 skaffold run \
     -p cloudrun \
-    --default-repo=gcr.io/${PROJECT_ID} \
-    --region=${REGION}
+    --default-repo=gcr.io/${PROJECT_ID}
 
 # Get service URLs
 echo ""
