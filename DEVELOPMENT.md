@@ -103,9 +103,110 @@ k3d cluster delete civic-grant-agent
 
 ---
 
+## Cloud Run Deployment with Skaffold
+
+You can also deploy the application to Google Cloud Run using Skaffold for a production-ready, serverless deployment.
+
+### Prerequisites for Cloud Run
+
+- **Google Cloud Project** with billing enabled
+- **Google Cloud SDK** (`gcloud`) installed and authenticated
+- **Skaffold** installed (https://skaffold.dev/docs/install/)
+- **Google API Key** for Gemini API
+
+### Quick Deploy to Cloud Run
+
+Use the automated deployment script:
+
+```bash
+chmod +x deployment/deploy-cloudrun-skaffold.sh
+./deployment/deploy-cloudrun-skaffold.sh
+```
+
+This script will:
+1. Set up your GCP project
+2. Enable required APIs (Cloud Run, Cloud Build, Secret Manager)
+3. Create/verify the `GOOGLE_API_KEY` secret
+4. Deploy both frontend and backend services to Cloud Run
+5. Display the service URLs
+
+### Manual Cloud Run Deployment
+
+If you prefer to deploy manually:
+
+```bash
+# 1. Set your GCP project
+export GCP_PROJECT="your-project-id"
+gcloud config set project ${GCP_PROJECT}
+
+# 2. Enable required APIs
+gcloud services enable cloudbuild.googleapis.com run.googleapis.com \
+  containerregistry.googleapis.com secretmanager.googleapis.com
+
+# 3. Create the API key secret (if not exists)
+echo -n "your-api-key" | gcloud secrets create GOOGLE_API_KEY --data-file=-
+
+# 4. Grant Cloud Run access to secrets
+PROJECT_NUMBER=$(gcloud projects describe ${GCP_PROJECT} --format="value(projectNumber)")
+gcloud secrets add-iam-policy-binding GOOGLE_API_KEY \
+  --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+  --role="roles/secretmanager.secretAccessor"
+
+# 5. Deploy with Skaffold
+skaffold run -p cloudrun --default-repo=gcr.io/${GCP_PROJECT}
+```
+
+### View Deployed Services
+
+After deployment, get your service URLs:
+
+```bash
+# Backend URL
+gcloud run services describe civic-grant-agent-backend \
+  --region us-central1 \
+  --format 'value(status.url)'
+
+# Frontend URL
+gcloud run services describe civic-grant-agent-frontend \
+  --region us-central1 \
+  --format 'value(status.url)'
+```
+
+### Update Frontend Configuration
+
+After deploying the backend, update the frontend's environment variable to point to the actual backend URL:
+
+1. Get the backend URL from the command above
+2. Edit `cloudrun/frontend-service.yaml` and update `NEXT_PUBLIC_API_URL`
+3. Redeploy: `skaffold run -p cloudrun --default-repo=gcr.io/${GCP_PROJECT}`
+
+### Monitor Cloud Run Services
+
+View logs:
+```bash
+# Backend logs
+gcloud run services logs read civic-grant-agent-backend --region us-central1
+
+# Frontend logs
+gcloud run services logs read civic-grant-agent-frontend --region us-central1
+```
+
+### Clean Up Cloud Run Deployment
+
+To remove the Cloud Run services:
+
+```bash
+gcloud run services delete civic-grant-agent-backend --region us-central1
+gcloud run services delete civic-grant-agent-frontend --region us-central1
+```
+
+---
+
 ## Troubleshooting
 
-### Update the Secret
+### Local Kubernetes
+
+#### Update the Secret
 
 If you need to update your API key after deployment:
 
@@ -114,4 +215,23 @@ kubectl delete secret civic-grant-agent-secrets
 kubectl create secret generic civic-grant-agent-secrets \
   --from-literal=google-api-key='YOUR_NEW_API_KEY'
 kubectl rollout restart deployment civic-grant-agent
+```
+
+### Cloud Run
+
+#### Update Secrets
+
+```bash
+# Update the secret value
+echo -n "new-api-key" | gcloud secrets versions add GOOGLE_API_KEY --data-file=-
+
+# The service will automatically use the latest version
+```
+
+#### View Detailed Service Info
+
+```bash
+gcloud run services describe civic-grant-agent-backend \
+  --region us-central1 \
+  --format yaml
 ```

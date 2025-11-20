@@ -53,3 +53,31 @@ profiles:
         - k8s/deployment.yaml
         - k8s/service.yaml
         - k8s/secret.yaml
+  - name: cloudrun
+    build:
+      artifacts:
+        - image: civic-grant-agent-frontend
+          context: frontend
+          docker:
+            dockerfile: Dockerfile
+        - image: civic-grant-agent-backend
+          context: .
+          docker:
+            dockerfile: backend/Dockerfile
+      googleCloudBuild:
+        projectId: ""  # Set via --default-repo or GCP_PROJECT env var
+    manifests:
+      rawYaml:
+        - cloudrun/backend-service.yaml
+        - cloudrun/frontend-service.yaml
+    deploy:
+      cloudrun:
+        projectid: ""  # Set via --default-repo or GCP_PROJECT env var
+        region: us-central1
+        hooks:
+          before:
+            - host:
+                command: ["sh", "-c", "echo 'Deploying to Cloud Run...'"]
+          after:
+            - host:
+                command: ["sh", "-c", "echo 'Deployment complete!'"]

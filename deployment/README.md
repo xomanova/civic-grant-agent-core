@@ -2,7 +2,46 @@
 
 ## Deployment Options
 
-### Option 1: Google Cloud Run (Recommended)
+### Option 1: Google Cloud Run with Skaffold (Recommended)
+
+**New!** Deploy both frontend and backend services to Cloud Run using Skaffold for streamlined deployment.
+
+#### Prerequisites
+- Google Cloud Project with billing enabled
+- Google Cloud SDK (`gcloud`) installed and authenticated
+- Skaffold installed (https://skaffold.dev/docs/install/)
+- Google API key for Gemini
+
+#### Quick Deploy with Skaffold
+
+```bash
+# Automated deployment script
+chmod +x deployment/deploy-cloudrun-skaffold.sh
+./deployment/deploy-cloudrun-skaffold.sh
+```
+
+The script handles:
+- GCP project setup and API enablement
+- Secret Manager configuration
+- Building and pushing container images
+- Deploying frontend and backend services
+- Displaying service URLs
+
+#### Manual Skaffold Deployment
+
+```bash
+# Set your project
+export GCP_PROJECT="your-project-id"
+
+# Deploy using Skaffold
+skaffold run -p cloudrun --default-repo=gcr.io/${GCP_PROJECT}
+```
+
+See `cloudrun/README.md` for detailed Cloud Run service configuration.
+
+---
+
+### Option 2: Google Cloud Run (Manual)
 
 Cloud Run provides serverless deployment with automatic scaling.
 
@@ -59,7 +98,7 @@ gcloud secrets add-iam-policy-binding GOOGLE_API_KEY \
   --role=roles/secretmanager.secretAccessor
 ```
 
-### Option 2: Cloud Build (CI/CD)
+### Option 3: Cloud Build (CI/CD)
 
 Use Cloud Build for automated deployments:
 
@@ -75,7 +114,7 @@ gcloud builds triggers create github \
   --build-config=deployment/cloudbuild.yaml
 ```
 
-### Option 3: Docker Compose (Local Development)
+### Option 4: Docker Compose (Local Development)
 
 For local testing:
 
@@ -93,7 +132,7 @@ docker-compose logs -f
 docker-compose down
 ```
 
-### Option 4: Kubernetes
+### Option 5: Kubernetes
 
 For production-scale deployment:
 
