@@ -17,16 +17,16 @@ load_dotenv()
 from ag_ui_adk import ADKAgent, add_adk_fastapi_endpoint
 import sys
 sys.path.append('/app')
-from agent_config import civic_grant_agent
+from agent_config import root_agent
 
 # Verify API key
 if not os.getenv("GOOGLE_API_KEY"):
     raise RuntimeError("GOOGLE_API_KEY environment variable not set")
 
 # Create ADK middleware agent instance
-adk_civic_grant_agent = ADKAgent(
-    adk_agent=civic_grant_agent,
-    app_name="civic_grant_agent",
+adk_root_agent = ADKAgent(
+    adk_agent=root_agent,
+    app_name="root_agent",
     user_id="default_user",
     session_timeout_seconds=3600,
     use_in_memory_services=True
@@ -75,7 +75,7 @@ async def root():
 
 # Add the ADK endpoint - this handles all AG-UI protocol communication
 # Mount at root path - GET requests go to root() above, POST requests handled by AG-UI
-add_adk_fastapi_endpoint(app, adk_civic_grant_agent, path="/copilotkit")
+add_adk_fastapi_endpoint(app, adk_root_agent, path="/copilotkit")
 
 if __name__ == "__main__":
     import uvicorn

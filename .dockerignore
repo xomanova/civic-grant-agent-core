@@ -39,7 +39,7 @@ env/
 # Logs
 *.log
 logs/
-civic_grant_agent.log
+root_agent.log
 
 # Output
 output/

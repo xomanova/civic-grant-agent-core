@@ -40,26 +40,12 @@ profiles:
       artifacts:
         - image: civic-grant-agent-frontend
           context: frontend
-          sync:
-            manual:
-              - src: "app/**/*.tsx"
-                dest: /app/app
-              - src: "app/**/*.ts"
-                dest: /app/app
+          docker:
+            dockerfile: Dockerfile
         - image: civic-grant-agent-backend
           context: .
           docker:
             dockerfile: backend/Dockerfile
-          sync:
-            manual:
-              - src: "backend/app.py"
-                dest: /app
-              - src: "backend/agent_config.py"
-                dest: /app
-              - src: "tools/**/*.py"
-                dest: /app/tools
-              - src: "utils/**/*.py"
-                dest: /app/utils
     deploy:
       kubectl: {}
     manifests:

@@ -3,10 +3,11 @@ ADK Agent Configuration
 Defines the multi-agent system for grant finding and writing.
 """
 
-from google.adk.agents import Agent, SequentialAgent
+from google.adk.agents import Agent, SequentialAgent, LoopAgent
 from google.adk.models.google_llm import Gemini
 from google.adk.tools import google_search
 from google.adk.code_executors import BuiltInCodeExecutor
+from google.adk.tools.tool_context import ToolContext
 from google.genai import types
 import os
 from dotenv import load_dotenv
@@ -23,120 +24,114 @@ retry_config = types.HttpRetryOptions(
 )
 
 # ============================================================================
-# AGENT 0: ProfileBuilder - The Interactive Interviewer
+# TOOL: Exit Profile Building Loop
 # ============================================================================
-# This agent collects department information through natural conversation
-# and builds a complete profile before triggering the grant pipeline.
+def exit_profile_loop(tool_context: ToolContext):
+    """Call this function ONLY when ALL required profile information has been collected and the department profile is complete."""
+    print(f"[Tool Call] exit_profile_loop triggered - profile is complete")
+    tool_context.actions.escalate = True
+    return {}
 
-profile_builder_agent = Agent(
-    name="ProfileBuilder",
+# ============================================================================
+# AGENT 0a: ProfileCollector - Collects information conversationally
+# ============================================================================
+
+# ============================================================================
+# AGENT 0a: ProfileCollector - Collects information conversationally
+# ============================================================================
+
+profile_collector_agent = Agent(
+    name="ProfileCollector",
     model=Gemini(
         model=os.getenv("GEMINI_MODEL", "gemini-2.0-flash-exp"),
         retry_options=retry_config
     ),
-    instruction="""You are the ProfileBuilder agent - a friendly intake specialist who helps fire departments and EMS agencies get started with grant finding.
+    include_contents='none',
+    tools=[exit_profile_loop],
+    instruction="""You are the ProfileCollector agent - a friendly intake specialist who helps fire departments and EMS agencies provide their information for grant finding.
 
-Your mission: Collect complete department information through natural conversation.
+Your mission: Collect department information through natural conversation, one piece at a time.
 
-**IMPORTANT**: You must collect ALL required information before proceeding. Be conversational but thorough.
+**IMPORTANT**: 
+- Continue the conversation naturally - DO NOT repeat your welcome message
+- Ask for ONE or TWO things at a time based on what's missing
+- Be conversational and friendly
+- When you receive a user response, extract the information and ask for the next piece
+
+**COMPLETION CHECK**:
+Before responding to the user, check if you have collected ALL of these REQUIRED fields:
+1. name (organization name)
+2. type (volunteer/paid/combination)
+3. location: state, city
+4. organization_details: annual_budget
+5. needs (at least 2-3 specific needs)
+6. service_stats: annual_fire_calls, annual_ems_calls
+
+IF you have ALL required information with meaningful values:
+  Call the 'exit_profile_loop' function immediately. Do not ask any more questions.
+  
+ELSE (still missing information):
+  Continue asking for what's missing naturally.
+
+**FRONTEND UPDATES**: As you collect information, call the updateDepartmentProfile action to update the UI incrementally.
 
 ## Required Information to Collect:
 
-### 1. Basic Organization Info (REQUIRED)
+### 1. Basic Organization Info
 - Organization name (full official name)
 - Type: volunteer, paid/career, or combination
 - Founded year (if known)
 - 501(c)(3) tax-exempt status (yes/no)
 
-### 2. Location (REQUIRED)
+### 2. Location
 - State
 - County
 - City/Town
 - Service area (square miles or description)
 - Population served (approximate)
 
-### 3. Resources (REQUIRED)
+### 3. Resources
 - Number of volunteers (if volunteer/combination)
 - Number of paid staff (if paid/combination)
 - Annual operating budget (approximate)
 
-### 4. Equipment & Needs (REQUIRED - Most Important!)
+### 4. Equipment & Needs (Most Important!)
 - Current equipment inventory (brief summary)
-- Primary needs (be VERY specific - e.g., "6 SCBA units", "thermal imaging camera", "turnout gear for 10 firefighters")
+- Primary needs (be VERY specific - e.g., "6 SCBA units", "thermal imaging camera")
 - Equipment age/condition concerns
 
-### 5. Service Statistics (REQUIRED)
+### 5. Service Statistics
 - Annual fire/rescue calls
 - Annual EMS calls
 - Mutual aid responses (if applicable)
 - Average response time
 
-### 6. Mission & Impact (REQUIRED)
+### 6. Mission & Impact
 - Mission statement or brief description of purpose
 - Community impact (who you serve, why it matters)
-- Recent accomplishments (optional but helpful)
 
-## Your Conversational Style:
+## Conversational Style:
+- Ask naturally based on what the user has shared
+- If they provide multiple pieces of info at once, acknowledge and extract all of it
+- Show appreciation for their responses
+- Keep it brief and friendly
 
-1. **Start warm and brief**: "Hi! I'm here to help you find grants for your fire department or EMS agency. To get started, could you tell me your organization's name and what type of department you are (volunteer, paid, or combination)?"
+Store collected information in the department_profile output key.
 
-2. **Ask naturally**: Don't interrogate. Use follow-up questions based on what they share.
-
-3. **Be flexible**: If they give you lots of info at once, great! Extract it all. If they're brief, ask for what's missing.
-
-4. **Show progress**: Occasionally acknowledge what you have: "Great! I have your basic info. Now let me ask about your current equipment needs..."
-
-5. **Prioritize needs**: Spend extra time on equipment needs - this is crucial for grant matching. Ask for specifics: quantities, models, age of current equipment.
-
-6. **Confirm before proceeding**: Once you have everything, summarize it back: "Let me confirm what I have..." and ask if anything needs correction.
-
-## Output Format:
-
-When you have collected ALL required information, output a complete JSON profile in this EXACT format:
-
-```json
-{
-  "name": "Full Department Name",
-  "type": "volunteer|paid|combination",
-  "location": {
-    "state": "State Name",
-    "county": "County Name",
-    "city": "City Name",
-    "service_area_population": 5000,
-    "service_area_size": "25 square miles"
-  },
-  "organization_details": {
-    "founded": "1952",
-    "tax_id": "XX-XXXXXXX (if provided)",
-    "501c3_status": true,
-    "annual_budget": 185000,
-    "volunteers": 32,
-    "paid_staff": 0
-  },
-  "needs": [
-    "Specific need 1 with quantities",
-    "Specific need 2 with quantities",
-    "Specific need 3 with quantities"
-  ],
-  "equipment_inventory": {
-    "summary": "Brief description of current equipment",
-    "condition": "Description of age and condition concerns"
-  },
-  "service_stats": {
-    "annual_fire_calls": 52,
-    "annual_ems_calls": 143,
-    "mutual_aid_responses": 38,
-    "average_response_time_minutes": 6.5
-  },
-  "mission": "Mission statement or purpose description",
-  "community_impact": "Description of who you serve and why it matters"
-}
-```
-
-**DO NOT proceed to grant searching until you have all this information!**
-
-Remember: You're helping heroes who serve their communities. Be thorough, respectful of their time, and ensure you get the specifics needed for successful grant matching.""",
+Remember: You're helping heroes who serve their communities!""",
     output_key="department_profile",
+)
+
+# ============================================================================
+# AGENT 0: ProfileBuilder Loop - Iteratively collects profile information
+# ============================================================================
+
+profile_builder_loop = LoopAgent(
+    name="ProfileBuilder",
+    sub_agents=[
+        profile_collector_agent,  # Collect information from user, exit when complete
+    ],
+    max_iterations=30  # Safety limit to prevent infinite loops
 )
 
 # ============================================================================
@@ -152,14 +147,14 @@ grant_scout_agent = Agent(
     tools=[google_search],
     instruction="""You are the GrantScout agent, specialized in finding grant opportunities for civic organizations.
 
-You will receive a complete department profile: {department_profile}
+You will receive a complete department profile in the department_profile output.
 
 Your task:
 1. Extract key information from the profile:
-   - Department type: {department_profile[type]}
-   - State: {department_profile[location][state]}
-   - Primary needs: {department_profile[needs]}
-   - Budget: {department_profile[organization_details][annual_budget]}
+   - Department type (volunteer, paid, or combination)
+   - State location
+   - Primary needs
+   - Budget
 
 2. Use Google Search to find 5-10 relevant grant opportunities
 
@@ -196,7 +191,9 @@ Output Format - Return valid JSON array:
 ]
 ```
 
-Be thorough - search multiple queries and compile the best opportunities.""",
+Be thorough - search multiple queries and compile the best opportunities.
+
+**FRONTEND UPDATES**: After finding grants, call the updateGrantsList action to display the grants in the UI so users can see and interact with them.""",
     output_key="grant_opportunities",
 )
 
@@ -214,8 +211,8 @@ grant_validator_agent = Agent(
     instruction="""You are the GrantValidator agent, specialized in analyzing grant eligibility.
 
 You will receive:
-- Grant opportunities: {grant_opportunities}
-- Department profile: {department_profile}
+- Grant opportunities from the grant_opportunities output
+- Department profile from the department_profile output
 
 Your task: Use Python code to systematically analyze eligibility for each grant.
 
@@ -236,9 +233,8 @@ Example Python code structure:
 ```python
 import json
 
-# Parse inputs
-dept_profile = {department_profile}
-grants = {grant_opportunities}
+# Parse inputs - access the outputs from previous agents
+# Use dept_profile and grants variables that will be available
 
 validated = []
 for grant in grants:
@@ -250,14 +246,14 @@ for grant in grants:
     dept_type = dept_profile.get('type', '').lower()
     if 'volunteer' in dept_type and 'volunteer' in grant.get('description', '').lower():
         score += 0.25
-        reasons.append(f"Type match: {{dept_type}}")
+        reasons.append("Type match: " + dept_type)
     
     # Location matching
     state = dept_profile.get('location', {}).get('state', '').lower()
     grant_text = (grant.get('description', '') + ' ' + grant.get('name', '')).lower()
     if state in grant_text or 'federal' in grant_text or 'national' in grant_text:
         score += 0.20
-        reasons.append(f"Geographic eligibility: {{state}}")
+        reasons.append("Geographic eligibility: " + state)
     
     # Needs alignment
     needs = dept_profile.get('needs', [])
@@ -265,7 +261,7 @@ for grant in grants:
     if needs and needs_matched > 0:
         needs_score = min((needs_matched / len(needs)) * 0.30, 0.30)
         score += needs_score
-        reasons.append(f"Needs match: {{needs_matched}}/{{len(needs)}} priorities")
+        reasons.append("Needs match: " + str(needs_matched) + "/" + str(len(needs)) + " priorities")
     
     # Budget match (simplified)
     score += 0.15  # Default assume budget is appropriate
@@ -276,13 +272,13 @@ for grant in grants:
         reasons.append("501(c)(3) status verified")
     
     if score >= 0.6:
-        validated.append({
-            **grant,
-            'eligibility_score': round(score, 2),
-            'match_reasons': reasons,
-            'warnings': warnings,
-            'priority_rank': len(validated) + 1
-        })
+        validated.append(dict(
+            grant,
+            eligibility_score=round(score, 2),
+            match_reasons=reasons,
+            warnings=warnings,
+            priority_rank=len(validated) + 1
+        ))
 
 # Sort by score
 validated.sort(key=lambda x: x['eligibility_score'], reverse=True)
@@ -312,19 +308,19 @@ grant_writer_agent = Agent(
     instruction="""You are the GrantWriter agent, specialized in drafting professional grant applications.
 
 You will receive:
-- Validated grants: {validated_grants}
-- Department profile: {department_profile}
+- Validated grants from the validated_grants output
+- Department profile from the department_profile output
 
 Your task: Generate a complete grant application draft for the TOP PRIORITY grant (priority_rank = 1).
 
 Extract from the profile:
-- Department name: {department_profile[name]}
-- Type: {department_profile[type]}
-- Location: {department_profile[location][city]}, {department_profile[location][state]}
-- Needs: {department_profile[needs]}
-- Budget: {department_profile[organization_details][annual_budget]}
-- Mission: {department_profile[mission]}
-- Service stats: {department_profile[service_stats]}
+- Department name
+- Type (volunteer/paid/combination)
+- Location (city and state)
+- Needs list
+- Budget
+- Mission
+- Service statistics
 
 Application Structure:
 
@@ -353,7 +349,7 @@ Specific equipment from needs list, technical specs, implementation timeline, de
 Cost breakdown, justification, matching funds (if applicable based on budget), cost-effectiveness, sustainability.
 
 ## 6. COMMUNITY IMPACT (250-300 words)
-Direct safety impact on {service_area_population} residents, response improvements, lives protected, economic benefits.
+Direct safety impact on residents in the service area, response improvements, lives protected, economic benefits.
 
 ## 7. SUSTAINABILITY PLAN (200-250 words)
 Maintenance plans, ongoing funding, training continuation, equipment lifecycle, organizational commitment.
@@ -367,16 +363,16 @@ Maintenance plans, ongoing funding, training continuation, equipment lifecycle, 
 )
 
 # ============================================================================
-# ROOT AGENT: Complete Grant Pipeline
+# ROOT AGENT: Complete Grant Pipeline with Profile Building Loop
 # ============================================================================
-# This orchestrates all agents in sequence
 
-civic_grant_agent = SequentialAgent(
-    name="CivicGrantAgentPipeline",
+root_agent = SequentialAgent(
+    name="CivicGrantAgent",
     sub_agents=[
-        profile_builder_agent,   # Agent 0: Collect department info through chat
-        grant_scout_agent,       # Agent 1: Search for grants
-        grant_validator_agent,   # Agent 2: Validate eligibility
-        grant_writer_agent,      # Agent 3: Draft application
+        profile_builder_loop,     # Loop: Collect profile until complete
+        grant_scout_agent,        # Search for grants
+        grant_validator_agent,    # Validate eligibility
+        grant_writer_agent        # Draft application
     ],
+    description="Executes grant finding pipeline: iteratively collects department profile, finds grants, validates eligibility, and drafts applications.",
 )
