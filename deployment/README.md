@@ -4,15 +4,13 @@
 
 ### Option 1: Google Cloud Run with Skaffold (Recommended)
 
-**New!** Deploy both frontend and backend services to Cloud Run using Skaffold for streamlined deployment.
-
 #### Prerequisites
 - Google Cloud Project with billing enabled
 - Google Cloud SDK (`gcloud`) installed and authenticated
 - Skaffold installed (https://skaffold.dev/docs/install/)
 - Google API key for Gemini
 
-#### Quick Deploy with Skaffold
+#### Quick Deploy with Skaffold - Interactive Script
 
 ```bash
 # Automated deployment script

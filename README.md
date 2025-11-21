@@ -134,41 +134,18 @@ This project demonstrates proficiency with Google's Agent Developer Kit:
 
 ## 🌐 Deployment
 
-### Deploy to Google Cloud Run with Skaffold (Recommended)
-
-Deploy both frontend and backend services to Cloud Run using Skaffold:
+Deploy to Google Cloud Run:
 
 ```bash
-# Set your GCP project
-export GCP_PROJECT="your-project-id"
-
-# One-command deployment with Skaffold
-skaffold run -p cloudrun --default-repo=gcr.io/${GCP_PROJECT}
-
-# Or use the automated deployment script
-chmod +x deployment/deploy-cloudrun-skaffold.sh
-./deployment/deploy-cloudrun-skaffold.sh
-```
-
-### Alternative: Cloud Build
-
-```bash
-# Build and deploy using Cloud Build
+# Build and deploy
 gcloud builds submit --config deployment/cloudbuild.yaml
+
+# Or use Docker
+docker build -t civic-grant-agent .
+docker run -p 8080:8080 civic-grant-agent
 ```
 
-### Local Development with Kubernetes
-
-```bash
-# Create local k3d cluster
-k3d cluster create civic-grant-agent
-
-# Deploy with Skaffold
-skaffold dev
-```
-
-See `deployment/` and `cloudrun/` directories for detailed deployment instructions.
-
+See `deployment/` directory for detailed deployment instructions.
 
 ## 🎥 Demo Video
 
