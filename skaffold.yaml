@@ -1,83 +1,77 @@
 apiVersion: skaffold/v4beta13
 kind: Config
 metadata:
-  name: civic-grant-agent
+  name: backend 
+build:
+  artifacts:
+    - image: civic-grant-agent-backend
+      context: .
+      docker:
+        dockerfile: backend/Dockerfile
+manifests:
+  rawYaml:
+    - k8s/deployment.yaml
+    - k8s/service.yaml
+    - k8s/secret.yaml
+deploy:
+  kubectl: {}
+portForward:
+  - resourceType: service
+    resourceName: civic-grant-agent-backend
+    port: 8000
+    localPort: 8000
+profiles:
+  - name: cloudrun
+    patches:
+      - op: remove
+        path: /deploy/kubectl
+      - op: remove
+        path: /portForward
+    build:
+      googleCloudBuild:
+        projectId: "civic-grant-agent-core"
+    manifests:
+      rawYaml:
+        - cloudrun/backend-service.yaml
+    deploy:
+      cloudrun:
+        projectid: "civic-grant-agent-core"
+        region: us-central1
+---
+apiVersion: skaffold/v4beta13
+kind: Config
+metadata:
+  name: frontend
 build:
   artifacts:
     - image: civic-grant-agent-frontend
       context: frontend
       docker:
         dockerfile: Dockerfile
-    - image: civic-grant-agent-backend
-      context: .
-      docker:
-        dockerfile: backend/Dockerfile
-  local:
-    push: false
-deploy:
-  kubectl: {}
 manifests:
   rawYaml:
-    - k8s/deployment.yaml
-    - k8s/service.yaml
-    - k8s/secret.yaml
+    - k8s/frontend.yaml
+deploy:
+  kubectl: {}
 portForward:
   - resourceType: service
     resourceName: civic-grant-agent-frontend
-    namespace: default
     port: 3000
     localPort: 3000
-  - resourceType: service
-    resourceName: civic-grant-agent-backend
-    namespace: default
-    port: 8000
-    localPort: 8000
 profiles:
-  - name: dev
-    activation:
-      - command: dev
-    build:
-      artifacts:
-        - image: civic-grant-agent-frontend
-          context: frontend
-          docker:
-            dockerfile: Dockerfile
-        - image: civic-grant-agent-backend
-          context: .
-          docker:
-            dockerfile: backend/Dockerfile
-    deploy:
-      kubectl: {}
-    manifests:
-      rawYaml:
-        - k8s/deployment.yaml
-        - k8s/service.yaml
-        - k8s/secret.yaml
   - name: cloudrun
+    patches:
+      - op: remove
+        path: /deploy/kubectl
+      - op: remove
+        path: /portForward
     build:
-      artifacts:
-        - image: civic-grant-agent-frontend
-          context: frontend
-          docker:
-            dockerfile: Dockerfile
-        - image: civic-grant-agent-backend
-          context: .
-          docker:
-            dockerfile: backend/Dockerfile
       googleCloudBuild:
-        projectId: ""  # Set via --default-repo or GCP_PROJECT env var
+        projectId: "civic-grant-agent-core"
     manifests:
       rawYaml:
-        - cloudrun/backend-service.yaml
         - cloudrun/frontend-service.yaml
     deploy:
       cloudrun:
-        projectid: ""  # Set via --default-repo or GCP_PROJECT env var
+        projectid: "civic-grant-agent-core"
         region: us-central1
-        hooks:
-          before:
-            - host:
-                command: ["sh", "-c", "echo 'Deploying to Cloud Run...'"]
-          after:
-            - host:
-                command: ["sh", "-c", "echo 'Deployment complete!'"]

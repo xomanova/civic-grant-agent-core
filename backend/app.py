@@ -42,7 +42,7 @@ app = FastAPI(
 # Configure CORS for frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify your frontend URL
+    allow_origins=["https://civic-grant-agent-core.xomanova.io"],  # In production, specify your frontend URL
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -75,7 +75,7 @@ async def root():
 
 # Add the ADK endpoint - this handles all AG-UI protocol communication
 # Mount at root path - GET requests go to root() above, POST requests handled by AG-UI
-add_adk_fastapi_endpoint(app, adk_root_agent, path="/copilotkit")
+add_adk_fastapi_endpoint(app, adk_root_agent, path="/api/copilotkit")
 
 if __name__ == "__main__":
     import uvicorn

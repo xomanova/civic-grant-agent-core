@@ -12,10 +12,11 @@ const serviceAdapter = new ExperimentalEmptyAdapter();
  
 // 2. Create the CopilotRuntime instance and utilize the AG-UI client
 //    to setup the connection with the ADK agent.
+const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const runtime = new CopilotRuntime({
   agents: {
     // Our FastAPI endpoint URL
-    "civic-grant-agent": new HttpAgent({url: "http://civic-grant-agent-backend:8000/copilotkit"}),
+    "civic-grant-agent": new HttpAgent({url: `${backendUrl}/api/copilotkit`}),
   }   
 });
  
@@ -24,7 +25,7 @@ export const POST = async (req: NextRequest) => {
   const { handleRequest } = copilotRuntimeNextJSAppRouterEndpoint({
     runtime, 
     serviceAdapter,
-    endpoint: "/api/copilotkit",
+    endpoint: "/copilotkit",
   });
  
   return handleRequest(req);
