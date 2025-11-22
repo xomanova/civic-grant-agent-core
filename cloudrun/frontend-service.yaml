@@ -23,19 +23,12 @@ spec:
         env:
         - name: NODE_ENV
           value: "production"
-        - name: PORT
-          value: "3000"
         - name: HOSTNAME
           value: "0.0.0.0"
         - name: NEXT_TELEMETRY_DISABLED
           value: "1"
         - name: NEXT_PUBLIC_API_URL
-          # IMPORTANT: Update this URL after deploying the backend service
-          # 1. Deploy backend first
-          # 2. Get backend URL: gcloud run services describe civic-grant-agent-backend --region us-central1 --format 'value(status.url)'
-          # 3. Replace the value below with your actual backend URL
-          # 4. Redeploy frontend: skaffold run -p cloudrun --default-repo=gcr.io/YOUR_PROJECT_ID
-          value: "https://civic-grant-agent-backend-REPLACE_WITH_YOUR_PROJECT_ID.a.run.app"
+          value: "https://civic-grant-agent-backend-grsfveacla-uc.a.run.app"
         resources:
           limits:
             cpu: "1"

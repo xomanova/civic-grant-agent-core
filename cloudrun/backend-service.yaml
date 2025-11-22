@@ -11,7 +11,6 @@ spec:
       annotations:
         autoscaling.knative.dev/minScale: "0"
         autoscaling.knative.dev/maxScale: "10"
-        run.googleapis.com/secrets: "GOOGLE_API_KEY=GOOGLE_API_KEY:latest"
     spec:
       containerConcurrency: 80
       timeoutSeconds: 300
@@ -22,10 +21,8 @@ spec:
         - name: http1
           containerPort: 8000
         env:
-        - name: PORT
-          value: "8000"
         - name: GEMINI_MODEL
-          value: "gemini-2.0-flash-exp"
+          value: "gemini-2.0-flash"
         - name: GOOGLE_API_KEY
           valueFrom:
             secretKeyRef:

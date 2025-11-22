@@ -1,0 +1,16 @@
+{
+  "hosting": {
+    "site": "civic-grant-agent-core",
+    "public": "public",
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+    "rewrites": [
+      {
+        "source": "**",
+        "run": {
+          "serviceId": "civic-grant-agent-frontend",
+          "region": "us-central1"
+        }
+      }
+    ]
+  }
+}

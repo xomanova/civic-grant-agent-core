@@ -1,6 +1,6 @@
 "use client";
 
-import { CopilotKit, useCopilotReadable, useCopilotAction } from "@copilotkit/react-core";
+import { useCopilotReadable, useCopilotAction } from "@copilotkit/react-core";
 import { CopilotKitCSSProperties, CopilotSidebar } from "@copilotkit/react-ui";
 import "@copilotkit/react-ui/styles.css";
 import { useState } from "react";
@@ -51,11 +51,7 @@ interface Grant {
 }
 
 export default function Home() {
-  return (
-    <CopilotKit runtimeUrl="/api/copilotkit" agent="civic-grant-agent">
-      <MainContent />
-    </CopilotKit>
-  );
+  return <MainContent />;
 }
 
 function MainContent() {

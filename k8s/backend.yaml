@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: civic-grant-agent-backend
+  labels:
+    app: civic-grant-agent-backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: civic-grant-agent-backend
+  template:
+    metadata:
+      labels:
+        app: civic-grant-agent-backend
+    spec:
+      containers:
+      # Backend Container - FastAPI
+      - name: backend
+        image: civic-grant-agent-backend
+        ports:
+        - containerPort: 8000
+          name: http-backend
+          protocol: TCP
+        env:
+        - name: GOOGLE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: civic-grant-agent-secrets
+              key: google-api-key
+        - name: GEMINI_MODEL
+          value: "gemini-2.0-flash"
+        - name: PORT
+          value: "8000"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 5
