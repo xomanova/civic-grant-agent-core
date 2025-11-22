@@ -26,15 +26,15 @@ retry_config = types.HttpRetryOptions(
 # ============================================================================
 # TOOL: Exit Profile Building Loop
 # ============================================================================
-def exit_profile_loop(tool_context: ToolContext):
-    """Call this function ONLY when ALL required profile information has been collected and the department profile is complete."""
+def exit_profile_loop(tool_context: ToolContext, final_profile_data: dict):
+    """Call this function ONLY when ALL required profile information has been collected.
+    
+    Args:
+        final_profile_data: The complete dictionary of collected department information.
+    """
     print(f"[Tool Call] exit_profile_loop triggered - profile is complete")
     tool_context.actions.escalate = True
-    return {}
-
-# ============================================================================
-# AGENT 0a: ProfileCollector - Collects information conversationally
-# ============================================================================
+    return final_profile_data
 
 # ============================================================================
 # AGENT 0a: ProfileCollector - Collects information conversationally
@@ -43,10 +43,9 @@ def exit_profile_loop(tool_context: ToolContext):
 profile_collector_agent = Agent(
     name="ProfileCollector",
     model=Gemini(
-        model=os.getenv("GEMINI_MODEL", "gemini-2.0-flash-exp"),
+        model=os.getenv("GEMINI_MODEL", "gemini-2.0-flash"),
         retry_options=retry_config
     ),
-    include_contents='none',
     tools=[exit_profile_loop],
     instruction="""You are the ProfileCollector agent - a friendly intake specialist who helps fire departments and EMS agencies provide their information for grant finding.
 
@@ -57,6 +56,7 @@ Your mission: Collect department information through natural conversation, one p
 - Ask for ONE or TWO things at a time based on what's missing
 - Be conversational and friendly
 - When you receive a user response, extract the information and ask for the next piece
+- Always tell the user what you are going to do before using a tool.
 
 **COMPLETION CHECK**:
 Before responding to the user, check if you have collected ALL of these REQUIRED fields:
@@ -68,10 +68,10 @@ Before responding to the user, check if you have collected ALL of these REQUIRED
 6. service_stats: annual_fire_calls, annual_ems_calls
 
 IF you have ALL required information with meaningful values:
-  Call the 'exit_profile_loop' function immediately. Do not ask any more questions.
+  Call the 'exit_profile_loop' function immediately, passing the complete 'final_profile_data' dictionary. Do not ask any more questions.
   
 ELSE (still missing information):
-  Continue asking for what's missing naturally.
+  Continue asking for what's missing naturally. You MUST wait for the user to respond before sending additional prompts.
 
 **FRONTEND UPDATES**: As you collect information, call the updateDepartmentProfile action to update the UI incrementally.
 
@@ -122,17 +122,7 @@ Remember: You're helping heroes who serve their communities!""",
     output_key="department_profile",
 )
 
-# ============================================================================
-# AGENT 0: ProfileBuilder Loop - Iteratively collects profile information
-# ============================================================================
 
-profile_builder_loop = LoopAgent(
-    name="ProfileBuilder",
-    sub_agents=[
-        profile_collector_agent,  # Collect information from user, exit when complete
-    ],
-    max_iterations=30  # Safety limit to prevent infinite loops
-)
 
 # ============================================================================
 # AGENT 1: GrantScout - Searches for grant opportunities
@@ -141,11 +131,13 @@ profile_builder_loop = LoopAgent(
 grant_scout_agent = Agent(
     name="GrantScout",
     model=Gemini(
-        model=os.getenv("GEMINI_MODEL", "gemini-2.0-flash-exp"),
+        model=os.getenv("GEMINI_MODEL", "gemini-2.0-flash"),
         retry_options=retry_config
     ),
     tools=[google_search],
     instruction="""You are the GrantScout agent, specialized in finding grant opportunities for civic organizations.
+
+Always tell the user what you are going to do before using a tool (like Google Search).
 
 You will receive a complete department profile in the department_profile output.
 
@@ -204,11 +196,13 @@ Be thorough - search multiple queries and compile the best opportunities.
 grant_validator_agent = Agent(
     name="GrantValidator",
     model=Gemini(
-        model=os.getenv("GEMINI_MODEL", "gemini-2.0-flash-exp"),
+        model=os.getenv("GEMINI_MODEL", "gemini-2.0-flash"),
         retry_options=retry_config
     ),
     code_executor=BuiltInCodeExecutor(),
     instruction="""You are the GrantValidator agent, specialized in analyzing grant eligibility.
+
+Always tell the user what you are going to do before running code.
 
 You will receive:
 - Grant opportunities from the grant_opportunities output
@@ -301,7 +295,7 @@ Output: Return the validated_grants JSON array printed by your code.""",
 grant_writer_agent = Agent(
     name="GrantWriter",
     model=Gemini(
-        model=os.getenv("GEMINI_MODEL", "gemini-2.0-flash-exp"),
+        model=os.getenv("GEMINI_MODEL", "gemini-2.0-flash"),
         retry_options=retry_config,
         temperature=0.7
     ),
@@ -360,6 +354,18 @@ Maintenance plans, ongoing funding, training continuation, equipment lifecycle, 
 
 **Output:** Return the complete draft in markdown format.""",
     output_key="grant_draft",
+)
+
+# ============================================================================
+# AGENT 0: ProfileBuilder Loop - Iteratively collects profile information
+# ============================================================================
+
+profile_builder_loop = LoopAgent(
+    name="ProfileBuilder",
+    sub_agents=[
+        profile_collector_agent,  # Collect information from user, exit when complete
+    ],
+    max_iterations=30  # Safety limit to prevent infinite loops
 )
 
 # ============================================================================

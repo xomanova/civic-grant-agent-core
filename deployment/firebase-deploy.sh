@@ -74,6 +74,11 @@ gcloud run services add-iam-policy-binding civic-grant-agent-backend \
 BACKEND_URL=$(gcloud run services describe civic-grant-agent-backend --region ${REGION} --format 'value(status.url)')
 echo -e "${GREEN}Backend is live at: ${BACKEND_URL}${NC}"
 
+# Update NEXT_PUBLIC_API_URL in frontend-service.yaml
+echo "Updating NEXT_PUBLIC_API_URL in frontend-service.yaml to ${BACKEND_URL}..."
+# Use sed to find the line with NEXT_PUBLIC_API_URL and replace the value in the NEXT line
+sed -i '/name: NEXT_PUBLIC_API_URL/{n;s|value: ".*"|value: "'"${BACKEND_URL}"'"|;}' cloudrun/frontend-service.yaml
+
 # --- 3. FRONTEND DEPLOYMENT (Cloud Run) ---
 echo -e "\n${BLUE}--- Step 2: Deploying Frontend to Cloud Run ---${NC}"
 

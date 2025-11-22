@@ -29,7 +29,7 @@ spec:
               name: civic-grant-agent-secrets
               key: google-api-key
         - name: GEMINI_MODEL
-          value: "gemini-2.0-flash-exp"
+          value: "gemini-2.0-flash"
         - name: PORT
           value: "8000"
         resources:

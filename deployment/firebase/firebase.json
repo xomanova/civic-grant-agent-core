@@ -5,20 +5,6 @@
     "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
     "rewrites": [
       {
-        "source": "/copilotkit",
-        "run": {
-          "serviceId": "civic-grant-agent-frontend",
-          "region": "us-central1"
-        }
-      },
-      {
-        "source": "/api/**",
-        "run": {
-          "serviceId": "civic-grant-agent-backend",
-          "region": "us-central1"
-        }
-      },
-      {
         "source": "**",
         "run": {
           "serviceId": "civic-grant-agent-frontend",

@@ -22,7 +22,7 @@ spec:
           containerPort: 8000
         env:
         - name: GEMINI_MODEL
-          value: "gemini-2.0-flash-exp"
+          value: "gemini-2.0-flash"
         - name: GOOGLE_API_KEY
           valueFrom:
             secretKeyRef:
