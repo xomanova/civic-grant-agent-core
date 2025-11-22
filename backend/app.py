@@ -42,7 +42,7 @@ app = FastAPI(
 # Configure CORS for frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://civic-grant-agent-core.xomanova.io"],  # In production, specify your frontend URL
+    allow_origins=["https://civic-grant-agent-core.xomanova.io"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
