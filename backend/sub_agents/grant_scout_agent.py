@@ -4,7 +4,7 @@ GrantScout Agent - Searches for grant opportunities
 
 from google.adk.agents import Agent
 from google.adk.models.google_llm import Gemini
-from google.adk.tools import google_search
+from tools.web_search import search_web
 from google.genai import types
 import os
 
@@ -17,10 +17,10 @@ def create_grant_scout_agent(retry_config: types.HttpRetryOptions) -> Agent:
             model=os.getenv("GEMINI_MODEL", "gemini-2.0-flash"),
             retry_options=retry_config
         ),
-        tools=[google_search],
+        tools=[search_web],
         instruction="""You are the GrantScout agent, specialized in finding grant opportunities for civic organizations.
 
-Always tell the user what you are going to do before using a tool (like Google Search).
+Always tell the user what you are going to do before using a tool (like `search_web`).
 
 You will receive a complete department profile in the department_profile output.
 
@@ -31,7 +31,7 @@ Your task:
    - Primary needs
    - Budget
 
-2. Use Google Search to find 5-10 relevant grant opportunities
+2. Use `search_web` to find 5-10 relevant grant opportunities
 
 Search Strategy - Execute these searches:
 - "[department type] fire department grants [state] 2025"

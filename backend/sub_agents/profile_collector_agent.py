@@ -5,6 +5,7 @@ ProfileCollector Agent - Collects department information conversationally
 from google.adk.agents import Agent
 from google.adk.models.google_llm import Gemini
 from google.adk.tools.tool_context import ToolContext
+from tools.web_search import search_web
 from google.genai import types
 import os
 
@@ -20,8 +21,9 @@ def exit_profile_loop(tool_context: ToolContext, final_profile_data: dict):
     """
     print(f"[Tool Call] exit_profile_loop triggered - profile is complete")
     tool_context.state["profile_complete"] = True
-    tool_context.actions.escalate = True
-    return final_profile_data
+    tool_context.state["final_profile"] = final_profile_data
+    # Do NOT escalate here. Let the agent generate a final response.
+    return "Profile data saved successfully. You may now inform the user that the profile is complete."
 
 
 def updateDepartmentProfile(profileData: dict):
@@ -42,7 +44,7 @@ def create_profile_collector_agent(retry_config: types.HttpRetryOptions) -> Agen
             model=os.getenv("GEMINI_MODEL", "gemini-2.0-flash"),
             retry_options=retry_config
         ),
-        tools=[exit_profile_loop, updateDepartmentProfile],
+        tools=[exit_profile_loop, updateDepartmentProfile, search_web],
         instruction="""You are the ProfileCollector agent - a friendly intake specialist who helps fire departments and EMS agencies provide their information for grant finding.
 
 **PRIMARY GOAL**: Gather the required information as quickly and efficiently as possible while maintaining a friendly tone. Do not wait for the user to prompt you to continue.
@@ -52,6 +54,14 @@ def create_profile_collector_agent(retry_config: types.HttpRetryOptions) -> Agen
 2. **Smooth Transitions**: Acknowledge the user's input briefly, then immediately transition to the next required field.
 3. **One Step at a Time**: Ask for ONE or TWO things at a time based on what's missing.
 4. **Frontend Updates**: As you collect information, call the updateDepartmentProfile action to update the UI incrementally.
+
+**MISSING INFORMATION & SEARCH**:
+If the user doesn't know a specific detail (like population or exact address) or if you want to be helpful by pre-filling public information:
+1. Use the `search_web` tool to find the information.
+2. **VERIFICATION REQUIRED**: You MUST NOT add searched information to the profile immediately.
+3. Instead, present the found information to the user and ask for confirmation.
+   Example: "I found online that your department serves a population of approximately 5,000. Is that accurate?"
+4. Only after the user confirms (e.g., "Yes", "That sounds right"), add it to the profile.
 
 **EXAMPLE INTERACTION**:
 User: "We are located in North Carolina."

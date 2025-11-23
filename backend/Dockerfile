@@ -13,8 +13,7 @@ COPY backend/app.py .
 # Copy agent configuration
 COPY backend/agent_config.py .
 COPY backend/sub_agents ./sub_agents
-COPY tools ./tools
-COPY utils ./utils
+COPY backend/tools ./tools
 
 ENV PYTHONUNBUFFERED=1
 ENV PORT=8000

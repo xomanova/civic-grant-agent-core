@@ -6,6 +6,9 @@
 
 set -e
 
+# PREVENT HANGS: Disable interactive prompts and update checks
+export CLOUDSDK_CORE_DISABLE_PROMPTS=1
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -47,14 +50,59 @@ fi
 gcloud config set project ${PROJECT_ID}
 export GCP_PROJECT=${PROJECT_ID}
 
+# --- 1.5 SECRETS CONFIGURATION ---
+echo -e "\n${BLUE}--- Step 1.5: Configuring Secrets ---${NC}"
+
+# Function to ensure a secret exists
+ensure_secret() {
+    local secret_name=$1
+    local prompt_text=$2
+    
+    # Check if secret exists
+    if gcloud secrets describe $secret_name --project=$PROJECT_ID --quiet &>/dev/null; then
+        echo -e "${GREEN}Secret $secret_name already exists. Skipping prompt.${NC}"
+    else
+        read -p "$prompt_text: " secret_value
+        if [ -n "$secret_value" ]; then
+            echo "Creating secret $secret_name..."
+            echo -n "$secret_value" | gcloud secrets create $secret_name --data-file=- --project=$PROJECT_ID --quiet 1>/dev/null
+        else
+            echo -e "${YELLOW}Warning: No value provided for $secret_name. Skipping.${NC}"
+        fi
+    fi
+}
+
+ensure_secret "GOOGLE_API_KEY" "Enter Google API Key (for Gemini Model)"
+ensure_secret "GOOGLE_SEARCH_API_KEY" "Enter Google Search API Key (for Custom Search)"
+ensure_secret "GOOGLE_SEARCH_ENGINE_ID" "Enter Google Search Engine ID (CX)"
+
+# Grant Cloud Run Service Account access to secrets
+# Note: This assumes the default compute service account is used. 
+# For production, use a dedicated service account.
+PROJECT_NUMBER=$(gcloud projects describe $PROJECT_ID --format='value(projectNumber)')
+SERVICE_ACCOUNT="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
+
+echo "Granting Secret Access to Service Account: ${SERVICE_ACCOUNT}..."
+gcloud secrets add-iam-policy-binding GOOGLE_API_KEY \
+    --member="serviceAccount:${SERVICE_ACCOUNT}" \
+    --role="roles/secretmanager.secretAccessor" --project=$PROJECT_ID --quiet 1>/dev/null || true
+
+gcloud secrets add-iam-policy-binding GOOGLE_SEARCH_API_KEY \
+    --member="serviceAccount:${SERVICE_ACCOUNT}" \
+    --role="roles/secretmanager.secretAccessor" --project=$PROJECT_ID --quiet 1>/dev/null || true
+
+gcloud secrets add-iam-policy-binding GOOGLE_SEARCH_ENGINE_ID \
+    --member="serviceAccount:${SERVICE_ACCOUNT}" \
+    --role="roles/secretmanager.secretAccessor" --project=$PROJECT_ID --quiet 1>/dev/null || true
+
 # --- 2. BACKEND DEPLOYMENT (Cloud Run) ---
 echo -e "\n${BLUE}--- Step 1: Deploying Backend to Cloud Run ---${NC}"
 
 # Ensure Artifact Registry Exists
-if ! gcloud artifacts repositories describe ${REPO_NAME} --location=${REGION} &>/dev/null; then
+if ! gcloud artifacts repositories describe ${REPO_NAME} --location=${REGION} --quiet &>/dev/null; then
     echo "Creating Artifact Registry repo..."
     gcloud artifacts repositories create ${REPO_NAME} \
-        --repository-format=docker --location=${REGION} --description="Civic Grant Agent Repo"
+        --repository-format=docker --location=${REGION} --description="Civic Grant Agent Repo" --quiet
 fi
 gcloud auth configure-docker ${REGION}-docker.pkg.dev --quiet
 
@@ -68,10 +116,12 @@ skaffold run -p cloudrun \
 # Make Backend Public (Required for Firebase to talk to it)
 echo "Configuring Backend IAM..."
 gcloud run services add-iam-policy-binding civic-grant-agent-backend \
-    --region ${REGION} --member="allUsers" --role="roles/run.invoker" &>/dev/null
+    --region ${REGION} --member="allUsers" --role="roles/run.invoker" --quiet 1>/dev/null
 
 # Get Backend URL
-BACKEND_URL=$(gcloud run services describe civic-grant-agent-backend --region ${REGION} --format 'value(status.url)')
+# BACKEND_URL=$(gcloud run services describe civic-grant-agent-backend --region ${REGION} --format 'value(status.url)')
+# Use custom domain for backend
+BACKEND_URL="https://civic-grant-agent-core.xomanova.io"
 echo -e "${GREEN}Backend is live at: ${BACKEND_URL}${NC}"
 
 # Update NEXT_PUBLIC_API_URL in frontend-service.yaml
@@ -91,7 +141,7 @@ skaffold run -p cloudrun \
 # Make Frontend Public
 echo "Configuring Frontend IAM..."
 gcloud run services add-iam-policy-binding civic-grant-agent-frontend \
-    --region ${REGION} --member="allUsers" --role="roles/run.invoker" &>/dev/null
+    --region ${REGION} --member="allUsers" --role="roles/run.invoker" --quiet 1>/dev/null
 
 # Get Frontend URL
 FRONTEND_URL=$(gcloud run services describe civic-grant-agent-frontend --region ${REGION} --format 'value(status.url)')

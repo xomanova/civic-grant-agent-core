@@ -28,6 +28,18 @@ spec:
             secretKeyRef:
               name: GOOGLE_API_KEY
               key: latest
+        - name: GOOGLE_SEARCH_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: GOOGLE_SEARCH_API_KEY
+              key: latest
+        - name: GOOGLE_SEARCH_ENGINE_ID
+          valueFrom:
+            secretKeyRef:
+              name: GOOGLE_SEARCH_ENGINE_ID
+              key: latest
+        - name: BACKEND_URL
+          value: "https://civic-grant-agent-core.xomanova.io"
         resources:
           limits:
             cpu: "2"

@@ -30,29 +30,53 @@ class OrchestratorAgent(Agent):
         
         # Step 1: Profile Building
         if step == "profile_building":
+            print(f"[Orchestrator] Entering profile_building step. State complete: {state.get('profile_complete')}")
             # Check if profile is complete
             if state.get("profile_complete"):
+                print("[Orchestrator] Profile already complete. Advancing to grant_scouting.")
                 # Move to next step
                 state["workflow_step"] = "grant_scouting"
                 # Fall through to next step immediately
                 step = "grant_scouting"
             else:
                 # Run profile agent
+                print("[Orchestrator] Running profile_agent...")
                 async for event in self.profile_agent.run_async(ctx):
+                    # Filter out empty text events that might crash ag-ui-adk
+                    # Check if it's a tool event (calls or responses) - keep those
+                    is_tool_event = event.get_function_calls() or event.get_function_responses()
+                    
+                    if not is_tool_event and event.content and event.content.parts:
+                        # It's likely a text event. Check if it has any actual text.
+                        has_text = False
+                        for part in event.content.parts:
+                            if part.text and len(part.text.strip()) > 0:
+                                has_text = True
+                                break
+                        
+                        # If it has content parts but no text (and isn't a tool event), skip it
+                        if not has_text:
+                             print("[Orchestrator] Skipping empty text Event")
+                             continue
+
                     yield event
+                    
+                    # Check if the sub-agent signaled completion via State
+                    # This allows us to break the loop cleanly after the agent has responded
+                    if ctx.session.state.get("profile_complete"):
+                        print("[Orchestrator] Profile completion signal detected during run. Handling handoff...")
+                        state["workflow_step"] = "grant_scouting"
+                        step = "grant_scouting"
+                        break
                 
-                # Check if it just completed
-                if state.get("profile_complete"):
-                    state["workflow_step"] = "grant_scouting"
-                    step = "grant_scouting"
-                    # Fall through to next step
-                else:
-                    # After profile agent returns (end of turn), we stop.
-                    # The state check will happen on next turn.
+                # If we didn't complete, return to wait for user input
+                if step == "profile_building":
+                    print("[Orchestrator] Profile agent turn finished. Waiting for user input.")
                     return
 
         # Step 2: Grant Scouting
         if step == "grant_scouting":
+            print("[Orchestrator] Entering grant_scouting step.")
             # Run scout agent
             async for event in self.scout_agent.run_async(ctx):
                 yield event
