@@ -64,10 +64,22 @@ class OrchestratorAgent(Agent):
                     # Check if the sub-agent signaled completion via State
                     # This allows us to break the loop cleanly after the agent has responded
                     if ctx.session.state.get("profile_complete"):
-                        print("[Orchestrator] Profile completion signal detected during run. Handling handoff...")
-                        state["workflow_step"] = "grant_scouting"
-                        step = "grant_scouting"
-                        break
+                        # CRITICAL: Only break if this event was a TextEvent (the agent speaking)
+                        # If we break on the ToolCallEvent, we cut off the agent's explanation.
+                        is_text_event = False
+                        if event.content and event.content.parts:
+                            for part in event.content.parts:
+                                if part.text:
+                                    is_text_event = True
+                                    break
+                        
+                        if is_text_event:
+                            print("[Orchestrator] Profile complete and final response sent. Handling handoff...")
+                            state["workflow_step"] = "grant_scouting"
+                            step = "grant_scouting"
+                            break
+                        else:
+                            print("[Orchestrator] Profile complete signal received, but waiting for final text response...")
                 
                 # If we didn't complete, return to wait for user input
                 if step == "profile_building":
