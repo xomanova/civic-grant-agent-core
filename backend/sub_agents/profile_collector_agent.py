@@ -19,8 +19,19 @@ def exit_profile_loop(tool_context: ToolContext, final_profile_data: dict):
         final_profile_data: The complete dictionary of collected department information.
     """
     print(f"[Tool Call] exit_profile_loop triggered - profile is complete")
+    tool_context.state["profile_complete"] = True
     tool_context.actions.escalate = True
     return final_profile_data
+
+
+def updateDepartmentProfile(profileData: dict):
+    """Update the department profile with new information as it's collected from the user.
+    
+    Args:
+        profileData: Partial or complete department profile data to merge with existing profile
+    """
+    print(f"[Tool Call] updateDepartmentProfile called with: {profileData}")
+    return {"status": "success", "message": "Profile updated successfully"}
 
 
 def create_profile_collector_agent(retry_config: types.HttpRetryOptions) -> Agent:
@@ -31,17 +42,20 @@ def create_profile_collector_agent(retry_config: types.HttpRetryOptions) -> Agen
             model=os.getenv("GEMINI_MODEL", "gemini-2.0-flash"),
             retry_options=retry_config
         ),
-        tools=[exit_profile_loop],
+        tools=[exit_profile_loop, updateDepartmentProfile],
         instruction="""You are the ProfileCollector agent - a friendly intake specialist who helps fire departments and EMS agencies provide their information for grant finding.
 
-Your mission: Collect department information through natural conversation, one piece at a time.
+**PRIMARY GOAL**: Gather the required information as quickly and efficiently as possible while maintaining a friendly tone. Do not wait for the user to prompt you to continue.
 
-**IMPORTANT**: 
-- Continue the conversation naturally - DO NOT repeat your welcome message
-- Ask for ONE or TWO things at a time based on what's missing
-- Be conversational and friendly
-- When you receive a user response, extract the information and ask for the next piece
-- Always tell the user what you are going to do before using a tool.
+**DATA GATHERING PROTOCOL**:
+1. **Always End with a Question**: After every user response, check if the department_profile is complete. If information is missing, you MUST immediately ask the next question. Never end a response without a follow-up question unless the profile is fully populated.
+2. **Smooth Transitions**: Acknowledge the user's input briefly, then immediately transition to the next required field.
+3. **One Step at a Time**: Ask for ONE or TWO things at a time based on what's missing.
+4. **Frontend Updates**: As you collect information, call the updateDepartmentProfile action to update the UI incrementally.
+
+**EXAMPLE INTERACTION**:
+User: "We are located in North Carolina."
+Agent: "Great, thanks for that location. Next, could you tell me if Morningslide Fire Department is a volunteer, paid/career, or combination department?"
 
 **COMPLETION CHECK**:
 Before responding to the user, check if you have collected ALL of these REQUIRED fields:
@@ -54,11 +68,6 @@ Before responding to the user, check if you have collected ALL of these REQUIRED
 
 IF you have ALL required information with meaningful values:
   Call the 'exit_profile_loop' function immediately, passing the complete 'final_profile_data' dictionary. Do not ask any more questions.
-  
-ELSE (still missing information):
-  Continue asking for what's missing naturally. You MUST wait for the user to respond before sending additional prompts.
-
-**FRONTEND UPDATES**: As you collect information, call the updateDepartmentProfile action to update the UI incrementally.
 
 ## Required Information to Collect:
 
@@ -95,14 +104,7 @@ ELSE (still missing information):
 - Mission statement or brief description of purpose
 - Community impact (who you serve, why it matters)
 
-## Conversational Style:
-- Ask naturally based on what the user has shared
-- If they provide multiple pieces of info at once, acknowledge and extract all of it
-- Show appreciation for their responses
-- Keep it brief and friendly
-
 Store collected information in the department_profile output key.
-
-Remember: You're helping heroes who serve their communities!""",
+""",
         output_key="department_profile",
     )
