@@ -39,10 +39,22 @@ app = FastAPI(
     version="2.0.0"
 )
 
-# Configure CORS for frontend
+# Configure CORS
+# Define allowed origins based on environment
+origins = [
+    "https://civic-grant-agent.xomanova.io",      # Frontend
+    "https://civic-grant-agent-core.xomanova.io", # Backend (self)
+    "http://localhost:3000",                        # Local Frontend
+    "http://localhost:8000",                        # Local Backend
+]
+
+# In development, allow all origins or expand the list
+if os.getenv("ENVIRONMENT", "development") == "development":
+    origins = ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://civic-grant-agent-core.xomanova.io"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
