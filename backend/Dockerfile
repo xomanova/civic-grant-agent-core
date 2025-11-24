@@ -1,5 +1,5 @@
 # FastAPI Backend Dockerfile
-FROM python:3.11-slim
+FROM python:3.13-slim
 
 WORKDIR /app
 
@@ -13,8 +13,7 @@ COPY backend/app.py .
 # Copy agent configuration
 COPY backend/agent_config.py .
 COPY backend/sub_agents ./sub_agents
-COPY tools ./tools
-COPY utils ./utils
+COPY backend/tools ./tools
 
 ENV PYTHONUNBUFFERED=1
 ENV PORT=8000

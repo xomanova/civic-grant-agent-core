@@ -4,5 +4,6 @@ Contains custom tools used by the agents.
 """
 
 from .eligibility_checker import check_eligibility, EligibilityChecker
+from .web_search import search_web
 
-__all__ = ["check_eligibility", "EligibilityChecker"]
+__all__ = ["check_eligibility", "EligibilityChecker", "search_web"]

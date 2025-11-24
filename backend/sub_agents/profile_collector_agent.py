@@ -5,32 +5,52 @@ ProfileCollector Agent - Collects department information conversationally
 from google.adk.agents import Agent
 from google.adk.models.google_llm import Gemini
 from google.adk.tools.tool_context import ToolContext
+from tools.web_search import search_web
+from tools.utils import deep_update
 from google.genai import types
 import os
-
 
 # ============================================================================
 # TOOL: Exit Profile Building Loop
 # ============================================================================
 def exit_profile_loop(tool_context: ToolContext, final_profile_data: dict):
-    """Call this function ONLY when ALL required profile information has been collected.
-    
-    Args:
-        final_profile_data: The complete dictionary of collected department information.
-    """
+    """Call this function ONLY when ALL required profile information has been collected."""
     print(f"[Tool Call] exit_profile_loop triggered - profile is complete")
-    tool_context.state["profile_complete"] = True
-    tool_context.actions.escalate = True
-    return final_profile_data
-
-
-def updateDepartmentProfile(profileData: dict):
-    """Update the department profile with new information as it's collected from the user.
     
-    Args:
-        profileData: Partial or complete department profile data to merge with existing profile
+    # 1. Set the Flag
+    tool_context.session.state["profile_complete"] = True
+    
+    # 2. Save the Data (Use the SAME key as the update tool)
+    # This ensures the dictionary is perfectly up-to-date for the next agent.
+    tool_context.session.state["department_profile"] = final_profile_data
+    
+    # Do NOT escalate here. Let the agent generate a final response.
+    return "Profile data saved successfully. You may now inform the user that the profile is complete."
+
+
+# ============================================================================
+# TOOL: Update Department Profile - DISABLED handling via CopilotKit
+# ============================================================================
+def updateDepartmentProfile(tool_context: ToolContext, profileData: dict):
+    """
+    Update the department profile with new information using DEEP MERGE.
     """
     print(f"[Tool Call] updateDepartmentProfile called with: {profileData}")
+    
+    # 1. Retrieve current profile
+    raw_profile = tool_context.session.state.get("department_profile", {})
+    if not isinstance(raw_profile, dict):
+        raw_profile = {}
+    
+    # 2. DEEP MERGE (The Fix)
+    # Instead of raw_profile.update(profileData), we use the helper
+    current_profile = deep_update(raw_profile, profileData)
+    
+    # 3. SAVE
+    tool_context.session.state["department_profile"] = current_profile
+    
+    print(f"[DEBUG] Profile merged and saved. Current keys: {list(current_profile.keys())}")
+    
     return {"status": "success", "message": "Profile updated successfully"}
 
 
@@ -42,69 +62,57 @@ def create_profile_collector_agent(retry_config: types.HttpRetryOptions) -> Agen
             model=os.getenv("GEMINI_MODEL", "gemini-2.0-flash"),
             retry_options=retry_config
         ),
-        tools=[exit_profile_loop, updateDepartmentProfile],
+        tools=[exit_profile_loop, search_web],
         instruction="""You are the ProfileCollector agent - a friendly intake specialist who helps fire departments and EMS agencies provide their information for grant finding.
 
-**PRIMARY GOAL**: Gather the required information as quickly and efficiently as possible while maintaining a friendly tone. Do not wait for the user to prompt you to continue.
+**PRIMARY GOAL**: Gather the required information quickly.
+
+**CRITICAL RULES (DO NOT BREAK):**
+1. **EXTRACT BEFORE ASKING**: Parse user input for ALL data points...
+2. **PUBLIC DATA = SEARCH**: Use search for public info...
+3. **VERIFICATION BLOCKER**: If verifying, STOP and wait...
+4. **TRUTH HIERARCHY**: User input > Search results. Overwrite if corrected.
 
 **DATA GATHERING PROTOCOL**:
-1. **Always End with a Question**: After every user response, check if the department_profile is complete. If information is missing, you MUST immediately ask the next question. Never end a response without a follow-up question unless the profile is fully populated.
-2. **Smooth Transitions**: Acknowledge the user's input briefly, then immediately transition to the next required field.
-3. **One Step at a Time**: Ask for ONE or TWO things at a time based on what's missing.
-4. **Frontend Updates**: As you collect information, call the updateDepartmentProfile action to update the UI incrementally.
+1. **Analyze Input**: Process "Yes/No" and new data.
+2. **Search**: If City/State is known but County/Pop is missing -> Call `search_web`.
+3. **Verify**: If you just found data via search, ASK the user to confirm. -> **STOP HERE.**
+4. **Check Completion**: See below.
 
-**EXAMPLE INTERACTION**:
-User: "We are located in North Carolina."
-Agent: "Great, thanks for that location. Next, could you tell me if Morningslide Fire Department is a volunteer, paid/career, or combination department?"
+**DATA STRUCTURE RULES**:
+When calling `updateDepartmentProfile`, you MUST strictly adhere to this nested JSON structure:
+{
+  "name": "String",
+  "type": "String",
+  "location": { "city": "String", "state": "String", "county": "String", "population": Number },
+  "organization_details": { "budget": Number, "founded": String },
+  "service_stats": { "calls": Number, "active_members": Number },
+  "needs": "String or List"
+}
 
-**COMPLETION CHECK**:
-Before responding to the user, check if you have collected ALL of these REQUIRED fields:
-1. name (organization name)
-2. type (volunteer/paid/combination)
-3. location: state, city
-4. organization_details: annual_budget
-5. needs (at least 2-3 specific needs)
-6. service_stats: annual_fire_calls, annual_ems_calls
+**MISSING INFORMATION STRATEGY**:
+- **County/Population**: Search -> Ask "Is that correct?" -> **WAIT.**
+- **Budget/Needs**: Ask directly.
 
-IF you have ALL required information with meaningful values:
-  Call the 'exit_profile_loop' function immediately, passing the complete 'final_profile_data' dictionary. Do not ask any more questions.
+**COMPLETION CHECK (THE FINISH LINE)**:
+Trigger this check after EVERY user response.
+1. **Check Data**: Do you have meaningful values for Name, Type, Location (City, State, County, Pop), Budget, Needs, Stats, and Mission?
+2. **Check Verification**: Did the user just confirm your data (e.g., said "Yes")?
+3. **ACTION**: If (1) and (2) are true:
+   - **Call `exit_profile_loop` IMMEDIATELY.**
+   - Do NOT ask "Is there anything else?"
+   - Do NOT say "Profile complete."
+   - Just call the tool to finish.
 
 ## Required Information to Collect:
-
-### 1. Basic Organization Info
-- Organization name (full official name)
-- Type: volunteer, paid/career, or combination
-- Founded year (if known)
-- 501(c)(3) tax-exempt status (yes/no)
-
-### 2. Location
-- State
-- County
-- City/Town
-- Service area (square miles or description)
-- Population served (approximate)
-
-### 3. Resources
-- Number of volunteers (if volunteer/combination)
-- Number of paid staff (if paid/combination)
-- Annual operating budget (approximate)
-
-### 4. Equipment & Needs (Most Important!)
-- Current equipment inventory (brief summary)
-- Primary needs (be VERY specific - e.g., "6 SCBA units", "thermal imaging camera")
-- Equipment age/condition concerns
-
-### 5. Service Statistics
-- Annual fire/rescue calls
-- Annual EMS calls
-- Mutual aid responses (if applicable)
-- Average response time
-
-### 6. Mission & Impact
-- Mission statement or brief description of purpose
-- Community impact (who you serve, why it matters)
-
-Store collected information in the department_profile output key.
+1. Name
+2. Type (Volunteer/Paid)
+3. Location (State, City, **County**, **Population**)
+4. Budget
+5. Needs
+6. Service Stats (Calls)
+7. Mission
 """,
-        output_key="department_profile",
+        # Keep this safe key we set earlier
+        output_key="profile_agent_response",
     )
