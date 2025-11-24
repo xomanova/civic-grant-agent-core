@@ -1,10 +1,11 @@
 "use client";
 
 import { useCopilotReadable, useCopilotAction } from "@copilotkit/react-core";
-import { CopilotKitCSSProperties, CopilotSidebar } from "@copilotkit/react-ui";
+import { CopilotSidebar } from "@copilotkit/react-ui";
 import "@copilotkit/react-ui/styles.css";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
+// --- Interfaces (Same as before) ---
 interface DepartmentProfile {
   name?: string;
   type?: string;
@@ -55,85 +56,122 @@ export default function Home() {
 }
 
 function MainContent() {
+  // 1. Initialize State
   const [departmentProfile, setDepartmentProfile] = useState<DepartmentProfile>({});
   const [grants, setGrants] = useState<Grant[]>([]);
   const [selectedGrant, setSelectedGrant] = useState<Grant | null>(null);
+  const [isLoaded, setIsLoaded] = useState(false); // Avoid hydration mismatch
 
-  // Make the department profile readable by the agent
+  // 2. HYDRATION: Load from LocalStorage on Mount
+  useEffect(() => {
+    const savedProfile = localStorage.getItem("civic_grant_profile");
+    const savedGrants = localStorage.getItem("civic_grant_list");
+
+    if (savedProfile) {
+      try {
+        setDepartmentProfile(JSON.parse(savedProfile));
+      } catch (e) {
+        console.error("Failed to parse profile", e);
+      }
+    }
+    if (savedGrants) {
+      try {
+        setGrants(JSON.parse(savedGrants));
+      } catch (e) {
+        console.error("Failed to parse grants", e);
+      }
+    }
+    setIsLoaded(true);
+  }, []);
+
+  // 3. PERSISTENCE: Save to LocalStorage whenever state changes
+  useEffect(() => {
+    if (isLoaded) {
+      localStorage.setItem("civic_grant_profile", JSON.stringify(departmentProfile));
+    }
+  }, [departmentProfile, isLoaded]);
+
+  useEffect(() => {
+    if (isLoaded) {
+      localStorage.setItem("civic_grant_list", JSON.stringify(grants));
+    }
+  }, [grants, isLoaded]);
+
+  // 4. AGENT CONTEXT: Send the profile to the Agent
+  // This ensures that even if the backend restarts, the Agent "sees" the data 
+  // immediately because it is injected into the context window.
   useCopilotReadable({
-    description: "The current department profile being built",
+    description: "The active Department Profile. If this is populated, the profile is considered 'in-progress' or 'complete'.",
     value: departmentProfile,
   });
+  
+  useCopilotReadable({
+    description: "The list of Grants found so far.",
+    value: grants,
+  });
 
-  // Action to update the department profile
+  // --- ACTIONS (Same logic, but state updates trigger the useEffects above) ---
+  
   useCopilotAction({
     name: "updateDepartmentProfile",
-    description: "Update the department profile with new information as it's collected from the user",
+    description: "Update the department profile with new information",
     parameters: [
       {
         name: "profileData",
         type: "object",
-        description: "Partial or complete department profile data to merge with existing profile",
+        description: "Partial or complete department profile data",
       },
     ],
     handler: async ({ profileData }: { profileData: Partial<DepartmentProfile> }) => {
-      setDepartmentProfile((prev: DepartmentProfile) => ({
-        ...prev,
-        ...profileData,
-        location: { ...prev.location, ...profileData.location },
-        organization_details: { ...prev.organization_details, ...profileData.organization_details },
-        equipment_inventory: { ...prev.equipment_inventory, ...profileData.equipment_inventory },
-        service_stats: { ...prev.service_stats, ...profileData.service_stats },
-      }));
+      setDepartmentProfile((prev) => {
+        // Deep merge logic for nested objects
+        return {
+          ...prev,
+          ...profileData,
+          location: { ...prev.location, ...profileData.location },
+          organization_details: { ...prev.organization_details, ...profileData.organization_details },
+          equipment_inventory: { ...prev.equipment_inventory, ...profileData.equipment_inventory },
+          service_stats: { ...prev.service_stats, ...profileData.service_stats },
+        };
+      });
+      return "Profile updated in frontend.";
     },
   });
 
-  // Action to update grants list
   useCopilotAction({
     name: "updateGrantsList",
     description: "Update the list of found grants",
-    parameters: [
-      {
-        name: "grantsList",
-        type: "object[]",
-        description: "Array of grant opportunities found",
-      },
-    ],
+    parameters: [{ name: "grantsList", type: "object[]" }],
     handler: async ({ grantsList }: { grantsList: Grant[] }) => {
       setGrants(grantsList);
+      return "Grants list updated in frontend.";
     },
   });
 
-  // Action to generate application for a specific grant
   useCopilotAction({
     name: "selectGrantForApplication",
     description: "User selected a grant to generate an application for",
-    parameters: [
-      {
-        name: "grantName",
-        type: "string",
-        description: "Name of the grant to generate application for",
-      },
-    ],
+    parameters: [{ name: "grantName", type: "string" }],
     handler: async ({ grantName }: { grantName: string }) => {
-      const grant = grants.find((g: Grant) => g.name === grantName);
-      if (grant) {
-        setSelectedGrant(grant);
-      }
+      const grant = grants.find((g) => g.name === grantName);
+      if (grant) setSelectedGrant(grant);
+      return `Selected grant: ${grantName}`;
     },
   });
+
+  // Prevent rendering until hydration is complete to avoid flicker
+  if (!isLoaded) return null;
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
       <CopilotSidebar
         defaultOpen={true}
-        labels={{
-          title: "🚒 Civic Grant Agent",
-          initial: "Hi! I'm here to help you find grants for your fire department or EMS agency. To get started, could you tell me your organization's name and what type of department you are (volunteer, paid, or combination)?",
-        }}
+        // OPTIONAL: You can persist the chat history ID here too if you want the *conversation* to survive reload
+        // labels={{ ... }}
       >
         <div className="p-8">
           <div className="max-w-4xl mx-auto">
+            {/* View Switching Logic */}
             {departmentProfile.name ? (
               <DepartmentProfileView profile={departmentProfile} />
             ) : (

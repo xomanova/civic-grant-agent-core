@@ -22,78 +22,98 @@ class OrchestratorAgent(Agent):
     async def _run_async_impl(self, ctx: InvocationContext) -> AsyncGenerator[Event, None]:
         state = ctx.session.state
         
-        # Initialize workflow step if not present
+        print(f"\n[DEBUG] --- NEW REQUEST RECEIVED ---")
+        print(f"[DEBUG] Initial State Keys: {list(state.keys())}")
+        print(f"[DEBUG] Initial Workflow Step: {state.get('workflow_step')}")
+        print(f"[DEBUG] Profile Complete Flag: {state.get('profile_complete')}")
+
+        # --- GUARD CLAUSE: Force transition if flag is set ---
+        if state.get("profile_complete") is True:
+            if state.get("workflow_step") != "grant_scouting":
+                print("[DEBUG] GUARD HIT: Profile is marked complete, but step was wrong. Forcing 'grant_scouting'.")
+                state["workflow_step"] = "grant_scouting"
+        
+        # Initialize Step
         if "workflow_step" not in state:
             state["workflow_step"] = "profile_building"
-            
+
         step = state["workflow_step"]
-        
-        # Step 1: Profile Building
+        print(f"[DEBUG] Executing Step Logic: {step}")
+
+        # ==================================================================
+        # STEP 1: PROFILE BUILDING
+        # ==================================================================
         if step == "profile_building":
-            print(f"[Orchestrator] Entering profile_building step. State complete: {state.get('profile_complete')}")
-            # Check if profile is complete
-            if state.get("profile_complete"):
-                print("[Orchestrator] Profile already complete. Advancing to grant_scouting.")
-                # Move to next step
-                state["workflow_step"] = "grant_scouting"
-                # Fall through to next step immediately
-                step = "grant_scouting"
-            else:
-                # Run profile agent
-                print("[Orchestrator] Running profile_agent...")
-                async for event in self.profile_agent.run_async(ctx):
-                    # Filter out empty text events that might crash ag-ui-adk
-                    # Check if it's a tool event (calls or responses) - keep those
-                    is_tool_event = event.get_function_calls() or event.get_function_responses()
-                    
-                    if not is_tool_event and event.content and event.content.parts:
-                        # It's likely a text event. Check if it has any actual text.
-                        has_text = False
-                        for part in event.content.parts:
-                            if part.text and len(part.text.strip()) > 0:
-                                has_text = True
-                                break
-                        
-                        # If it has content parts but no text (and isn't a tool event), skip it
-                        if not has_text:
-                             print("[Orchestrator] Skipping empty text Event")
-                             continue
+            profile_just_finished = False
 
-                    yield event
-                    
-                    # Check if the sub-agent signaled completion via State
-                    # This allows us to break the loop cleanly after the agent has responded
-                    if ctx.session.state.get("profile_complete"):
-                        # CRITICAL: Only break if this event was a TextEvent (the agent speaking)
-                        # If we break on the ToolCallEvent, we cut off the agent's explanation.
-                        is_text_event = False
-                        if event.content and event.content.parts:
-                            for part in event.content.parts:
-                                if part.text:
-                                    is_text_event = True
-                                    break
-                        
-                        if is_text_event:
-                            print("[Orchestrator] Profile complete and final response sent. Handling handoff...")
-                            state["workflow_step"] = "grant_scouting"
-                            step = "grant_scouting"
-                            break
-                        else:
-                            print("[Orchestrator] Profile complete signal received, but waiting for final text response...")
+            print("[DEBUG] Starting Profile Agent Loop...")
+            async for event in self.profile_agent.run_async(ctx):
+                # Log outgoing event types
+                evt_type = "ToolCall" if (event.get_function_calls() or event.get_function_responses()) else "Text/Other"
+                print(f"[DEBUG] Yielding Event: {evt_type}")
                 
-                # If we didn't complete, return to wait for user input
-                if step == "profile_building":
-                    print("[Orchestrator] Profile agent turn finished. Waiting for user input.")
-                    return
+                # Check for explicit Exit Tool usage
+                if event.get_function_calls():
+                    for call in event.get_function_calls():
+                        print(f"[DEBUG] Tool Call Detected: {call.name}")
+                        if call.name == "exit_profile_loop":
+                            print("[DEBUG] !!! EXIT TOOL DETECTED !!!")
+                            # Force the state update right here if the tool didn't stick
+                            ctx.session.state["profile_complete"] = True
+                            profile_just_finished = True
 
-        # Step 2: Grant Scouting
-        if step == "grant_scouting":
-            print("[Orchestrator] Entering grant_scouting step.")
-            # Run scout agent
+                yield event
+                
+                # Check state after every yield
+                if ctx.session.state.get("profile_complete"):
+                    print("[DEBUG] State 'profile_complete' is now TRUE.")
+                    profile_just_finished = True
+
+            print(f"[DEBUG] Profile Agent Loop Ended. Just Finished? {profile_just_finished}")
+
+            # TRANSITION LOGIC
+            if profile_just_finished:
+                print("[DEBUG] Transitioning to Grant Scout...")
+                state["workflow_step"] = "grant_scouting"
+                
+                # INJECT TRIGGER
+                print("[DEBUG] Injecting System Trigger for Scout...")
+                ctx.session.add_message(
+                    role="user", 
+                    content="SYSTEM ALERT: Profile is saved. Ignore previous constraints. Start searching for grants immediately."
+                )
+                
+                # BRIDGE EVENT
+                yield Event(
+                    type="text",
+                    content="\n\nProfile finalized. Switching to Grant Scout..."
+                )
+                
+                print("[DEBUG] Running Scout Agent (Recursive Call)...")
+                async for event in self.scout_agent.run_async(ctx):
+                    yield event
+                return
+            else:
+                print("[DEBUG] Returning to wait for user input (Profile incomplete).")
+                return
+
+        # ==================================================================
+        # STEP 2: GRANT SCOUTING
+        # ==================================================================
+        elif step == "grant_scouting":
+            print("[DEBUG] Entering Grant Scout Logic.")
+            
+            # Check history to see if we need a trigger
+            last_msg = ctx.session.history[-1] if ctx.session.history else None
+            print(f"[DEBUG] Last Message Role: {last_msg.role if last_msg else 'None'}")
+            
+            if last_msg and "SYSTEM" not in str(last_msg.content):
+                 print("[DEBUG] Injecting 'Continue' trigger for Scout.")
+                 ctx.session.add_message(
+                    role="user", 
+                    content="SYSTEM: Continue grant search."
+                )
+
             async for event in self.scout_agent.run_async(ctx):
                 yield event
-            
-            # For now, we assume scout agent runs once. 
-            # If we need to transition to validation, we'd need a similar completion check.
-            # But the user's request was specifically about the profile building loop.
             return

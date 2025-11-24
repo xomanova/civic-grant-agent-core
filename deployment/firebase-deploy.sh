@@ -6,6 +6,17 @@
 
 set -e
 
+# Parse arguments
+BACKEND_ONLY=false
+for arg in "$@"; do
+  case $arg in
+    --backend-only)
+      BACKEND_ONLY=true
+      shift
+      ;;
+  esac
+done
+
 # PREVENT HANGS: Disable interactive prompts and update checks
 export CLOUDSDK_CORE_DISABLE_PROMPTS=1
 
@@ -123,6 +134,11 @@ gcloud run services add-iam-policy-binding civic-grant-agent-backend \
 # Use custom domain for backend
 BACKEND_URL="https://civic-grant-agent-core.xomanova.io"
 echo -e "${GREEN}Backend is live at: ${BACKEND_URL}${NC}"
+
+if [ "$BACKEND_ONLY" = true ]; then
+    echo -e "${GREEN}Backend deployment complete. Stopping as --backend-only flag was passed.${NC}"
+    exit 0
+fi
 
 # Update NEXT_PUBLIC_API_URL in frontend-service.yaml
 echo "Updating NEXT_PUBLIC_API_URL in frontend-service.yaml to ${BACKEND_URL}..."
