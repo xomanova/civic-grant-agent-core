@@ -1,6 +1,6 @@
 "use client";
 
-import { useCopilotReadable, useCopilotAction } from "@copilotkit/react-core";
+import { useCopilotReadable, useCopilotAction, useCoAgent } from "@copilotkit/react-core";
 import { CopilotSidebar } from "@copilotkit/react-ui";
 import "@copilotkit/react-ui/styles.css";
 import { useState, useEffect } from "react";
@@ -109,6 +109,20 @@ function MainContent() {
     description: "The list of Grants found so far.",
     value: grants,
   });
+
+  // 5. COAGENT: Sync Backend State
+  const { state: agentState } = useCoAgent({
+    name: "CivicGrantAgent",
+    initialState: {
+      department_profile: departmentProfile,
+    },
+  });
+
+  useEffect(() => {
+    if (agentState?.department_profile && Object.keys(agentState.department_profile).length > 0) {
+      setDepartmentProfile(agentState.department_profile);
+    }
+  }, [agentState]);
 
   // --- ACTIONS (Same logic, but state updates trigger the useEffects above) ---
   

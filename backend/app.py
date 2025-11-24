@@ -26,7 +26,7 @@ if not os.getenv("GOOGLE_API_KEY"):
 # Create ADK middleware agent instance
 adk_root_agent = ADKAgent(
     adk_agent=root_agent,
-    app_name="root_agent",
+    app_name="civic-grant-agent-backend",
     user_id="default_user",
     session_timeout_seconds=3600,
     use_in_memory_services=True
