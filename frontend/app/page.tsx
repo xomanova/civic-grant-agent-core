@@ -1,6 +1,7 @@
 "use client";
 
 import { useCopilotReadable, useCopilotAction, useCoAgent, useCopilotChat } from "@copilotkit/react-core";
+import { TextMessage, MessageRole } from "@copilotkit/runtime-client-gql";
 import { CopilotSidebar } from "@copilotkit/react-ui";
 import "@copilotkit/react-ui/styles.css";
 import { useState, useEffect } from "react";
@@ -65,6 +66,7 @@ function MainContent() {
   const [departmentProfile, setDepartmentProfile] = useState<DepartmentProfile>({});
   const [grants, setGrants] = useState<Grant[]>([]);
   const [selectedGrant, setSelectedGrant] = useState<Grant | null>(null);
+  const [grantDraft, setGrantDraft] = useState<string>("");
   const [isLoaded, setIsLoaded] = useState(false);
   
   // Workflow state
@@ -72,10 +74,13 @@ function MainContent() {
   const [profileComplete, setProfileComplete] = useState<boolean>(false); 
   
   // 2. Shared State with Backend via useCoAgent
-  const { state: agentState } = useCoAgent<{
+  const { state: agentState, setState: setAgentState } = useCoAgent<{
     civic_grant_profile: DepartmentProfile;
     profile_complete: boolean;
     workflow_step: string;
+    grants_for_display?: Grant[];
+    selected_grant_for_writing?: Grant;
+    grant_draft?: string;
   }>({
     name: "civic-grant-agent",
     initialState: {
@@ -85,18 +90,20 @@ function MainContent() {
     }
   });
 
-  // 3. Track if agent is running
-  const { isLoading } = useCopilotChat();
+  // 3. Track if agent is running and get ability to send messages
+  const { isLoading, appendMessage } = useCopilotChat();
 
   // 4. SIMPLE RULE: Always sync FROM backend when agent state changes
   // The backend is the source of truth for workflow progression
   useEffect(() => {
     if (!agentState) return;
     
-    console.log("agentState received:", {
+    console.log("🔄 agentState received:", {
       workflow_step: agentState.workflow_step,
       profile_complete: agentState.profile_complete,
       profile_keys: Object.keys(agentState.civic_grant_profile || {}),
+      grants_count: agentState.grants_for_display?.length || 0,
+      grants_for_display: agentState.grants_for_display,
       isLoading
     });
     localStorage.setItem("debug_agent_state", JSON.stringify(agentState));
@@ -111,9 +118,33 @@ function MainContent() {
       });
     }
     
+    // Sync grants from backend (these come from finder agent)
+    if (agentState.grants_for_display && agentState.grants_for_display.length > 0) {
+      console.log(`🎯 grants_for_display detected with ${agentState.grants_for_display.length} grants`);
+      setGrants(prev => {
+        if (JSON.stringify(prev) === JSON.stringify(agentState.grants_for_display)) {
+          console.log("Grants unchanged, skipping sync");
+          return prev;
+        }
+        console.log(`✅ Syncing ${agentState.grants_for_display!.length} grants from backend to UI`);
+        return agentState.grants_for_display!;
+      });
+    } else {
+      console.log("No grants_for_display in agentState or empty array");
+    }
+    
+    // Sync grant draft from backend (comes from grant_writer)
+    if (agentState.grant_draft) {
+      setGrantDraft(prev => {
+        if (prev === agentState.grant_draft) return prev;
+        console.log("Syncing grant draft from backend");
+        return agentState.grant_draft!;
+      });
+    }
+    
     // Sync workflow_step - only advance, never regress (unless it's a reset)
     if (agentState.workflow_step) {
-      const stepOrder = ["profile_building", "grant_scouting", "grant_validation", "grant_writing"];
+      const stepOrder = ["profile_building", "grant_scouting", "grant_validation", "awaiting_grant_selection", "grant_writing"];
       setWorkflowStep(prev => {
         const prevIndex = stepOrder.indexOf(prev);
         const newIndex = stepOrder.indexOf(agentState.workflow_step);
@@ -154,7 +185,8 @@ function MainContent() {
   }, [departmentProfile, isLoaded]);
 
   useEffect(() => {
-    if (isLoaded) {
+    if (isLoaded && grants.length > 0) {
+      console.log(`💾 Saving ${grants.length} grants to localStorage`);
       localStorage.setItem("civic_grant_list", JSON.stringify(grants));
     }
   }, [grants, isLoaded]);
@@ -235,6 +267,32 @@ function MainContent() {
     },
   });
 
+  // Handler for when user clicks a grant card to generate application
+  const handleSelectGrantForWriting = (grant: Grant) => {
+    console.log("🎯 User selected grant for writing:", grant.name);
+    setSelectedGrant(grant);
+    
+    // Push the selected grant to backend state to trigger grant_writer
+    setAgentState({
+      civic_grant_profile: departmentProfile,
+      profile_complete: profileComplete,
+      workflow_step: "grant_writing",
+      grants_for_display: grants,
+      selected_grant_for_writing: grant
+    });
+    
+    // Update local workflow state
+    setWorkflowStep("grant_writing");
+    
+    // Send a message to trigger the backend to run with the new state
+    appendMessage(
+      new TextMessage({
+        role: MessageRole.User,
+        content: `Please generate a grant application for: ${grant.name}`
+      })
+    );
+  };
+
   // Persist workflow state to localStorage
   useEffect(() => {
     if (isLoaded) {
@@ -301,6 +359,7 @@ function MainContent() {
                   setDepartmentProfile({});
                   setGrants([]);
                   setSelectedGrant(null);
+                  setGrantDraft("");
                   setWorkflowStep("profile_building");
                   setProfileComplete(false);
                   localStorage.removeItem("civic_grant_profile");
@@ -317,8 +376,16 @@ function MainContent() {
             {grants.length > 0 && (
               <GrantsView 
                 grants={grants} 
-                onSelectGrant={(grant) => setSelectedGrant(grant)}
+                onSelectGrant={handleSelectGrantForWriting}
                 selectedGrant={selectedGrant}
+              />
+            )}
+            
+            {grantDraft && (
+              <GrantDraftView 
+                draft={grantDraft}
+                selectedGrant={selectedGrant}
+                onClear={() => setGrantDraft("")}
               />
             )}
           </div>
@@ -652,6 +719,55 @@ function GrantsView({ grants, onSelectGrant, selectedGrant }: {
             </button>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function GrantDraftView({ draft, selectedGrant, onClear }: { 
+  draft: string;
+  selectedGrant: Grant | null;
+  onClear: () => void;
+}) {
+  return (
+    <div className="bg-white rounded-lg shadow-xl p-6 mt-6">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-2xl font-bold text-gray-900">
+          📝 Grant Application Draft
+        </h2>
+        <div className="flex gap-2">
+          <button
+            onClick={() => {
+              navigator.clipboard.writeText(draft);
+              alert("Copied to clipboard!");
+            }}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium text-sm"
+          >
+            📋 Copy
+          </button>
+          <button
+            onClick={onClear}
+            className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors font-medium text-sm"
+          >
+            ✕ Clear
+          </button>
+        </div>
+      </div>
+      
+      {selectedGrant && (
+        <div className="mb-4 p-3 bg-blue-50 rounded-lg">
+          <p className="text-sm text-blue-700">
+            <strong>For:</strong> {selectedGrant.name}
+          </p>
+        </div>
+      )}
+      
+      <div className="prose prose-sm max-w-none">
+        <div 
+          className="whitespace-pre-wrap font-mono text-sm bg-gray-50 p-4 rounded-lg border overflow-auto max-h-[600px]"
+        >
+          {draft}
+        </div>
       </div>
     </div>
   );

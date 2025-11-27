@@ -1,6 +1,6 @@
 from google.adk.agents import Agent, InvocationContext
 from google.adk.events import Event
-from typing import AsyncGenerator, List, Optional
+from typing import AsyncGenerator
 from pydantic import model_validator
 
 def is_empty_text_event(event) -> bool:
@@ -33,19 +33,14 @@ def is_empty_text_event(event) -> bool:
 
 class OrchestratorAgent(Agent):
     profile_agent: Agent
-    scout_agent: Agent
-    validator_agent: Agent
+    finder_agent: Agent  # Combined scout + validator
     writer_agent: Agent
 
-    @model_validator(mode='after')
-    def set_sub_agents(self):
-        self.sub_agents = [
-            self.profile_agent,
-            self.scout_agent,
-            self.validator_agent,
-            self.writer_agent
-        ]
-        return self
+    # NOTE: We intentionally do NOT set self.sub_agents here.
+    # If we did, ADK would auto-route subsequent messages directly to sub-agents,
+    # bypassing our orchestrator logic. 
+    # The orchestrator, as the root_agent, is the agent with CopilotKit Actions access for updating the UI
+    # The orchestrator is also responsible for managing the workflow state transitions.
 
     def _check_profile_completeness(self, profile: dict) -> bool:
         """
@@ -70,15 +65,8 @@ class OrchestratorAgent(Agent):
         
         print(f"\n[DEBUG] --- NEW REQUEST RECEIVED ---")
         print(f"[DEBUG] Session State Keys: {list(state.keys())}")
-        print(f"[DEBUG] state_authority: {state.get('state_authority')}")
         print(f"[DEBUG] workflow_step from state: {state.get('workflow_step')}")
         print(f"[DEBUG] profile_complete from state: {state.get('profile_complete')}")
-        
-        # RELAY SYSTEM: Backend should have authority when processing
-        # Frontend sets state_authority="backend" when sending a message
-        authority = state.get("state_authority", "backend")
-        if authority != "backend":
-            print(f"[DEBUG] WARNING: state_authority is '{authority}', expected 'backend'. Proceeding anyway.")
         
         # Get profile from state - this persists across requests via AG-UI session
         civic_grant_profile = state.get("civic_grant_profile", {})
@@ -173,28 +161,74 @@ class OrchestratorAgent(Agent):
                 return
 
         # ==================================================================
-        # STEP 2: GRANT SCOUTING
+        # STEP 2: GRANT FINDING (combined scout + validation)
         # ==================================================================
         elif workflow_step == "grant_scouting":
-            print("[DEBUG] Entering Grant Scout Logic.")
+            print("[DEBUG] Entering Grant Finder Logic.")
             
-            print("[DEBUG] Running Scout Agent...")
-            async for event in self.scout_agent.run_async(ctx):
+            # Run finder agent - searches and validates grants
+            print("[DEBUG] Running Finder Agent...")
+            async for event in self.finder_agent.run_async(ctx):
+                # Allow all events through (text + tool calls)
                 if is_empty_text_event(event):
-                    print(f"[DEBUG] Skipping empty text event from Scout")
+                    print(f"[DEBUG] Skipping empty text event from Finder")
                     continue
                 yield event
+            
+            # Finder stores results in validated_grants via output_key (as string)
+            # Parse JSON and copy to grants_for_display for frontend sync
+            validated_grants_raw = ctx.session.state.get("validated_grants", "")
+            print(f"[DEBUG] Finder output raw length: {len(validated_grants_raw) if validated_grants_raw else 0}")
+            
+            validated_grants = []
+            if validated_grants_raw:
+                import json
+                import re
+                try:
+                    # Try to extract JSON array from the output
+                    # The output might have text before/after the JSON
+                    json_match = re.search(r'\[.*\]', validated_grants_raw, re.DOTALL)
+                    if json_match:
+                        validated_grants = json.loads(json_match.group())
+                        print(f"[DEBUG] Parsed {len(validated_grants)} grants from JSON")
+                    else:
+                        print(f"[DEBUG] No JSON array found in output")
+                except json.JSONDecodeError as e:
+                    print(f"[DEBUG] Failed to parse grants JSON: {e}")
+            
+            if validated_grants:
+                ctx.session.state["grants_for_display"] = validated_grants
+                print(f"[DEBUG] Stored {len(validated_grants)} grants in grants_for_display")
+            
+            # Transition to awaiting user selection
+            ctx.session.state["workflow_step"] = "awaiting_grant_selection"
+            print("[DEBUG] Finder finished. Workflow set to awaiting_grant_selection")
+            
             return
 
         # ==================================================================
-        # STEP 3: GRANT VALIDATION
+        # STEP 3.5: AWAITING GRANT SELECTION (idle state)
         # ==================================================================
-        elif workflow_step == "grant_validation":
-            print("[DEBUG] Entering Grant Validator Logic.")
-            async for event in self.validator_agent.run_async(ctx):
-                if is_empty_text_event(event):
-                    continue
-                yield event
+        elif workflow_step == "awaiting_grant_selection":
+            print("[DEBUG] In awaiting_grant_selection - checking for selected grant...")
+            
+            # Check if user has selected a grant
+            selected_grant = ctx.session.state.get("selected_grant_for_writing")
+            
+            if selected_grant:
+                print(f"[DEBUG] User selected grant: {selected_grant.get('name', 'Unknown')}")
+                ctx.session.state["workflow_step"] = "grant_writing"
+                
+                # Immediately transition to grant writing
+                print("[DEBUG] Starting Grant Writer Agent...")
+                async for event in self.writer_agent.run_async(ctx):
+                    if is_empty_text_event(event):
+                        continue
+                    yield event
+            else:
+                # No grant selected yet - user needs to click one in the UI
+                print("[DEBUG] No grant selected yet. Waiting for user selection via UI.")
+            
             return
 
         # ==================================================================

@@ -45,10 +45,46 @@ def updateDepartmentProfile(tool_context: ToolContext, profileData: dict):
 
 # Exit Tool
 def exit_profile_loop(tool_context: ToolContext, final_profile_data: dict):
-    print(f"[Backend] Exiting profile loop.")
+    """
+    Mark profile as complete and transition to grant scouting.
+    Merges final_profile_data with existing profile (does not overwrite).
+    
+    Args:
+        final_profile_data: Optional final profile data to merge. Can be empty dict {}.
+    """
+    print(f"[Backend] Exiting profile loop. final_profile_data: {final_profile_data}")
+    
+    # Get existing profile - DON'T overwrite it!
+    existing_profile = tool_context.state.get("civic_grant_profile", {})
+    if not isinstance(existing_profile, dict):
+        existing_profile = {}
+    
+    print(f"[Backend] Existing profile before merge: {list(existing_profile.keys())}")
+    
+    # Only merge if final_profile_data has content (not empty dict)
+    if final_profile_data and isinstance(final_profile_data, dict) and len(final_profile_data) > 0:
+        # Deep merge final data into existing
+        def deep_merge(base: dict, updates: dict) -> dict:
+            result = base.copy()
+            for key, value in updates.items():
+                if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+                    result[key] = deep_merge(result[key], value)
+                else:
+                    result[key] = value
+            return result
+        existing_profile = deep_merge(existing_profile, final_profile_data)
+        print(f"[Backend] Profile after merge: {list(existing_profile.keys())}")
+    else:
+        print(f"[Backend] No merge needed - using existing profile")
+    
+    # Save merged profile back
+    tool_context.state["civic_grant_profile"] = existing_profile
     tool_context.state["profile_complete"] = True
-    tool_context.state["workflow_step"] = "grant_scouting"  # Pre-set for next request
-    tool_context.state["civic_grant_profile"] = final_profile_data
+    tool_context.state["workflow_step"] = "grant_scouting"
+    
+    print(f"[Backend] Final civic_grant_profile keys: {list(existing_profile.keys())}")
+    print(f"[Backend] profile_complete: True, workflow_step: grant_scouting")
+    
     return "Profile completed! Tell the user their profile is complete and ask them to say 'find grants' or 'search for grants' to start searching for matching grant opportunities."
 
 # Callback to initialize state before agent runs

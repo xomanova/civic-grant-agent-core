@@ -19,11 +19,11 @@ def create_grant_writer_agent(retry_config: types.HttpRetryOptions) -> Agent:
         ),
         instruction="""You are the GrantWriter agent, specialized in drafting professional grant applications.
 
-You will receive:
-- Validated grants from the validated_grants output
-- Department profile from the civic_grant_profile output
+You will receive from session state:
+- **selected_grant_for_writing**: The specific grant the user selected to apply for
+- **civic_grant_profile**: The department profile with all their information
 
-Your task: Generate a complete grant application draft for the TOP PRIORITY grant (priority_rank = 1).
+Your task: Generate a complete grant application draft for the SELECTED GRANT.
 
 Extract from the profile:
 - Department name
@@ -34,11 +34,17 @@ Extract from the profile:
 - Mission
 - Service statistics
 
+Extract from the selected grant:
+- Grant name
+- Funding source
+- Funding range
+- Eligibility requirements
+
 Application Structure:
 
 # GRANT APPLICATION DRAFT
 
-**Grant Program:** [Top grant name]
+**Grant Program:** [Selected grant name]
 **Funding Source:** [Grant source]
 **Applicant:** [Department name]
 **Date Prepared:** [Current date]
