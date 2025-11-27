@@ -42,35 +42,82 @@ from agent_config import root_agent
 from ag_ui_adk.adk_agent import ADKAgent as AgUIADKAgent
 
 # Patch 1: Fix empty text delta validation errors
+# The error happens when TextMessageContentEvent is created with delta=""
+# Pydantic validates immediately and raises before any wrapper can catch it.
+# 
+# Solution: Patch TextMessageContentEvent class BEFORE the EventTranslator uses it
+
+# Store original TextMessageContentEvent
+_OriginalTextMessageContentEvent = TextMessageContentEvent
+
+class SafeTextMessageContentEvent(TextMessageContentEvent):
+    """
+    Subclass that allows empty delta strings during construction.
+    We replace empty string with a sentinel that we filter out later.
+    """
+    _is_empty_delta: bool = False
+    
+    def __init__(self, **data):
+        delta = data.get('delta', '')
+        if delta == '':
+            # Replace empty with placeholder to pass validation, mark for skip
+            data['delta'] = '\u200B'  # Zero-width space (invisible)
+            super().__init__(**data)
+            object.__setattr__(self, '_is_empty_delta', True)
+        else:
+            super().__init__(**data)
+            object.__setattr__(self, '_is_empty_delta', False)
+
+# Patch TextMessageContentEvent in the event_translator module BEFORE translate is called
+import ag_ui_adk.event_translator
+ag_ui_adk.event_translator.TextMessageContentEvent = SafeTextMessageContentEvent
+
+logger.info("[STARTUP] Patched TextMessageContentEvent to handle empty deltas")
+
+# Also patch the main translate to filter out events marked as empty
 _original_translate = EventTranslator.translate
 
 async def _patched_translate(self, adk_event, thread_id: str, run_id: str) -> AsyncGenerator[BaseEvent, None]:
     """
-    Patched translate method that catches validation errors per-event
-    and skips problematic events instead of crashing the whole stream.
+    Patched translate method that:
+    1. Filters out events with empty/placeholder deltas
+    2. Catches validation errors as a safety net
     """
-    gen = _original_translate(self, adk_event, thread_id, run_id)
-    
-    while True:
-        try:
-            event = await gen.__anext__()
-            yield event
-        except StopAsyncIteration:
-            break
-        except ValueError as e:
-            error_msg = str(e)
-            # Check if it's the empty delta validation error
-            if "Delta must not be" in error_msg or "empty string" in error_msg.lower():
-                logger.warning(f"[PATCH] Caught empty delta validation error, skipping event: {error_msg}")
-                # Continue to next event instead of crashing
-                continue
-            else:
-                # Re-raise other ValueError exceptions
-                raise
-        except Exception as e:
-            # Log but re-raise unexpected errors
-            logger.error(f"[PATCH] Unexpected error in translate: {type(e).__name__}: {e}")
-            raise
+    try:
+        gen = _original_translate(self, adk_event, thread_id, run_id)
+        
+        while True:
+            try:
+                event = await gen.__anext__()
+                
+                # Filter out events marked as empty by our SafeTextMessageContentEvent
+                if hasattr(event, '_is_empty_delta') and event._is_empty_delta:
+                    logger.warning(f"[PATCH] Filtering out empty delta event")
+                    continue
+                
+                # Also filter events with just zero-width space
+                if hasattr(event, 'delta') and event.delta == '\u200B':
+                    logger.warning(f"[PATCH] Filtering out zero-width space delta event")
+                    continue
+                    
+                yield event
+            except StopAsyncIteration:
+                break
+            except Exception as e:
+                error_msg = str(e).lower()
+                # Check if it's a validation error related to empty strings
+                if "string_too_short" in error_msg or "at least 1 character" in error_msg or "empty string" in error_msg or "delta must not" in error_msg:
+                    logger.warning(f"[PATCH] Caught validation error during translate iteration, skipping: {e}")
+                    continue
+                else:
+                    logger.error(f"[PATCH] Unexpected error in translate: {type(e).__name__}: {e}")
+                    raise
+    except Exception as e:
+        error_msg = str(e).lower()
+        if "string_too_short" in error_msg or "at least 1 character" in error_msg or "empty string" in error_msg:
+            logger.warning(f"[PATCH] Caught validation error at translate generator start, skipping event: {e}")
+            return  # Empty generator
+        raise
 
 EventTranslator.translate = _patched_translate
 logger.info("[STARTUP] Applied monkey-patch to EventTranslator.translate for empty text handling")
@@ -85,31 +132,190 @@ _original_get_unseen_messages = AgUIADKAgent._get_unseen_messages
 
 async def _patched_get_unseen_messages(self, input):
     """
-    Patched _get_unseen_messages that ensures new user messages are never filtered out.
-    The original can incorrectly return empty when all messages appear to be processed,
-    but the user just sent a new message that should be processed.
+    Patched _get_unseen_messages that:
+    1. Filters out CopilotKit's system messages (we have our own instructions)
+    2. Ensures user messages are never filtered out
     """
+    logger.info(f"[PATCH] _get_unseen_messages called with {len(input.messages) if input.messages else 0} messages")
+    
+    # Debug: Log ALL messages
+    if input.messages:
+        logger.info("[PATCH] === ALL INPUT MESSAGES ===")
+        for i, msg in enumerate(input.messages):
+            msg_id = getattr(msg, 'id', 'NO_ID')
+            role = getattr(msg, 'role', 'NO_ROLE')
+            content = getattr(msg, 'content', '')
+            content_preview = str(content)[:100] if content else 'EMPTY'
+            logger.info(f"[PATCH] Message {i}: id={msg_id}, role={role}, content={content_preview}")
+    
     result = await _original_get_unseen_messages(self, input)
     
+    logger.info(f"[PATCH] Original _get_unseen_messages returned {len(result) if result else 0} unseen messages")
+    
+    # Filter out system messages - CopilotKit adds these but ADK agents have their own instructions
     if result:
+        filtered_result = [msg for msg in result if getattr(msg, 'role', None) != 'system']
+        removed_count = len(result) - len(filtered_result)
+        if removed_count > 0:
+            logger.info(f"[PATCH] Filtered out {removed_count} system message(s)")
+        result = filtered_result
+    
+    # Debug: Log UNSEEN messages after filtering
+    if result:
+        logger.info("[PATCH] === UNSEEN MESSAGES (after filter) ===")
+        for i, msg in enumerate(result):
+            msg_id = getattr(msg, 'id', 'NO_ID')
+            role = getattr(msg, 'role', 'NO_ROLE')
+            content = getattr(msg, 'content', '')
+            content_preview = str(content)[:100] if content else 'EMPTY'
+            logger.info(f"[PATCH] Unseen {i}: id={msg_id}, role={role}, content={content_preview}")
+    
+    # Check if the result includes a user message
+    has_user_message = False
+    if result:
+        for msg in result:
+            if getattr(msg, 'role', None) == 'user':
+                has_user_message = True
+                break
+    
+    if has_user_message:
+        logger.info("[PATCH] Result includes user message, returning as-is")
         return result
     
-    # If no unseen messages found, check if there's a recent user message
-    # This handles the case where message tracking incorrectly filters out new messages
+    # No user message in result - try to find the last user message from input
+    logger.info("[PATCH] No user message in result, checking input for last user message")
     if input.messages:
-        # Find the last user message
         for msg in reversed(input.messages):
             role = getattr(msg, 'role', None)
             content = getattr(msg, 'content', '')
-            if role == 'user' and content and isinstance(content, str) and content.strip():
-                logger.info(f"[PATCH] No unseen messages found, but found last user message: '{content[:50]}...'")
-                # Return just this message to be processed
-                return [msg]
+            
+            # Handle content that might be a string or an array
+            text_content = None
+            if isinstance(content, str) and content.strip():
+                text_content = content
+            elif isinstance(content, list):
+                for part in content:
+                    if isinstance(part, dict) and part.get('type') == 'text':
+                        text_content = part.get('text', '')
+                        break
+                    elif isinstance(part, str):
+                        text_content = part
+                        break
+            
+            if role == 'user' and text_content:
+                logger.info(f"[PATCH] INJECTING last user message: '{text_content[:50]}...'")
+                # Add this message to the result
+                if result:
+                    return result + [msg]
+                else:
+                    return [msg]
     
+    logger.warning("[PATCH] No user message found to inject")
     return result
 
 AgUIADKAgent._get_unseen_messages = _patched_get_unseen_messages
 logger.info("[STARTUP] Applied monkey-patch to ADKAgent._get_unseen_messages for message tracking")
+
+# Patch _convert_latest_message to find user message even when batch doesn't contain one
+_original_convert_latest_message = AgUIADKAgent._convert_latest_message
+
+async def _patched_convert_latest_message(self, input, messages=None):
+    """
+    Patched _convert_latest_message that falls back to finding a user message
+    from the full input if the provided messages batch doesn't contain one.
+    """
+    from google.genai import types
+    
+    logger.info(f"[PATCH] _convert_latest_message called, messages param has {len(messages) if messages else 0} items")
+    
+    if messages:
+        for i, msg in enumerate(messages):
+            role = getattr(msg, 'role', 'NO_ROLE')
+            content = getattr(msg, 'content', '')
+            logger.info(f"[PATCH] _convert_latest_message checking msg {i}: role={role}, content={str(content)[:50] if content else 'EMPTY'}")
+    
+    # First, try the original method
+    result = await _original_convert_latest_message(self, input, messages)
+    
+    if result is not None:
+        logger.info(f"[PATCH] _convert_latest_message returned: {result}")
+        return result
+    
+    # Original returned None - check if we have a system-only batch
+    # If so, look for the last user message in the full input
+    logger.info("[PATCH] Original returned None, checking full input for user message")
+    
+    if input.messages:
+        for msg in reversed(input.messages):
+            role = getattr(msg, 'role', None)
+            content = getattr(msg, 'content', '')
+            
+            if role == 'user' and content:
+                text_content = None
+                if isinstance(content, str) and content.strip():
+                    text_content = content
+                elif isinstance(content, list):
+                    for part in content:
+                        if isinstance(part, dict) and part.get('type') == 'text':
+                            text_content = part.get('text', '')
+                            break
+                        elif isinstance(part, str):
+                            text_content = part
+                            break
+                
+                if text_content:
+                    logger.info(f"[PATCH] FALLBACK: Found user message in full input: '{text_content[:50]}...'")
+                    return types.Content(
+                        parts=[types.Part.from_text(text_content)],
+                        role='user'
+                    )
+    
+    logger.warning("[PATCH] _convert_latest_message returning None - no user message found anywhere")
+    return None
+
+AgUIADKAgent._convert_latest_message = _patched_convert_latest_message
+logger.info("[STARTUP] Applied monkey-patch to ADKAgent._convert_latest_message with fallback")
+
+# Patch the run() method to catch errors during iteration
+_original_run = AgUIADKAgent.run
+
+async def _patched_run(self, input):
+    """
+    Patched run() method that catches errors during async iteration.
+    """
+    from ag_ui.core import RunFinishedEvent, EventType
+    
+    logger.info(f"[PATCH] run() called with {len(input.messages) if input.messages else 0} messages")
+    
+    gen = _original_run(self, input)
+    
+    while True:
+        try:
+            event = await gen.__anext__()
+            yield event
+        except StopAsyncIteration:
+            break
+        except ValueError as e:
+            error_msg = str(e)
+            if "Both invocation_id and new_message are None" in error_msg:
+                logger.warning(f"[PATCH] Caught ADK runner error in run(): {error_msg}")
+                logger.warning("[PATCH] Sending graceful completion instead of crashing")
+                
+                # Send completion to avoid frontend crash
+                yield RunFinishedEvent(
+                    type=EventType.RUN_FINISHED,
+                    thread_id=input.thread_id,
+                    run_id=input.run_id
+                )
+                break
+            else:
+                raise
+        except Exception as e:
+            logger.error(f"[PATCH] Unexpected error in run(): {type(e).__name__}: {e}")
+            raise
+
+AgUIADKAgent.run = _patched_run
+logger.info("[STARTUP] Applied monkey-patch to ADKAgent.run for error handling")
 
 async def _patched_run_adk_in_background(self, input, adk_agent, user_id, app_name, event_queue, tool_results=None, message_batch=None):
     """

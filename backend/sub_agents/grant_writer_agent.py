@@ -21,7 +21,7 @@ def create_grant_writer_agent(retry_config: types.HttpRetryOptions) -> Agent:
 
 You will receive:
 - Validated grants from the validated_grants output
-- Department profile from the department_profile output
+- Department profile from the civic_grant_profile output
 
 Your task: Generate a complete grant application draft for the TOP PRIORITY grant (priority_rank = 1).
 

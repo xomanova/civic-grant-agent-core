@@ -24,7 +24,7 @@ Always tell the user what you are going to do before running code.
 
 You will receive:
 - Grant opportunities from the grant_opportunities output
-- Department profile from the department_profile output
+- Department profile from the civic_grant_profile output
 
 Your task: Use Python code to systematically analyze eligibility for each grant.
 

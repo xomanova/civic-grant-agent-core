@@ -22,7 +22,7 @@ def create_grant_scout_agent(retry_config: types.HttpRetryOptions) -> Agent:
 
 Always tell the user what you are going to do before using a tool (like `search_web`).
 
-You will receive a complete department profile in the department_profile output.
+You will receive a complete department profile in the civic_grant_profile output.
 
 Your task:
 1. Extract key information from the profile:
