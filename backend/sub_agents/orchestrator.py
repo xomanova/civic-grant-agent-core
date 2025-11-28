@@ -131,30 +131,19 @@ class OrchestratorAgent(Agent):
             print(f"[DEBUG] Profile Agent Loop Ended. Just Finished? {profile_just_finished}")
             print(f"[DEBUG] Current profile_complete state: {ctx.session.state.get('profile_complete')}")
 
-            # TRANSITION LOGIC
+            # TRANSITION LOGIC - Set state but DON'T auto-run finder
+            # Let the user send a new message like "find grants" to trigger finder
             if profile_just_finished or ctx.session.state.get("profile_complete"):
-                print("[DEBUG] *** TRANSITIONING TO GRANT SCOUT ***")
+                print("[DEBUG] *** PROFILE COMPLETE - Setting workflow to grant_scouting ***")
                 state["workflow_step"] = "grant_scouting"
                 
-                # UPDATE SHARED STATE
-                print("[DEBUG] Updating Shared State with Profile Schema...")
                 # Ensure the profile is available in the key 'civic_grant_profile'
                 if "civic_grant_profile" not in ctx.session.state:
                     ctx.session.state["civic_grant_profile"] = ctx.session.state.get("department_profile", {})
                 
-                print(f"[DEBUG] About to run scout_agent. Scout agent: {self.scout_agent}")
-                print(f"[DEBUG] Scout agent name: {getattr(self.scout_agent, 'name', 'unknown')}")
-                
-                try:
-                    print("[DEBUG] Starting Scout Agent run_async...")
-                    async for event in self.scout_agent.run_async(ctx):
-                        print(f"[DEBUG] Scout yielded event type: {type(event)}")
-                        yield event
-                    print("[DEBUG] Scout Agent run_async completed")
-                except Exception as e:
-                    print(f"[DEBUG] ERROR running scout agent: {type(e).__name__}: {e}")
-                    import traceback
-                    traceback.print_exc()
+                # DON'T auto-run finder here - the exit_profile_loop tool tells user to say "find grants"
+                # The next user message will come in with workflow_step="grant_scouting" and run finder
+                print("[DEBUG] Profile complete. Waiting for user to say 'find grants'")
                 return
             else:
                 print("[DEBUG] Returning to wait for user input (Profile incomplete).")
@@ -175,33 +164,18 @@ class OrchestratorAgent(Agent):
                     continue
                 yield event
             
-            # Finder stores results in validated_grants via output_key (as string)
-            # Parse JSON and copy to grants_for_display for frontend sync
-            validated_grants_raw = ctx.session.state.get("validated_grants", "")
-            print(f"[DEBUG] Finder output raw length: {len(validated_grants_raw) if validated_grants_raw else 0}")
+            # Finder saves grants to state via save_grants_to_state tool
+            # Check if grants were saved
+            validated_grants = ctx.session.state.get("validated_grants", [])
+            grants_for_display = ctx.session.state.get("grants_for_display", [])
             
-            validated_grants = []
-            if validated_grants_raw:
-                import json
-                import re
-                try:
-                    # Try to extract JSON array from the output
-                    # The output might have text before/after the JSON
-                    json_match = re.search(r'\[.*\]', validated_grants_raw, re.DOTALL)
-                    if json_match:
-                        validated_grants = json.loads(json_match.group())
-                        print(f"[DEBUG] Parsed {len(validated_grants)} grants from JSON")
-                    else:
-                        print(f"[DEBUG] No JSON array found in output")
-                except json.JSONDecodeError as e:
-                    print(f"[DEBUG] Failed to parse grants JSON: {e}")
+            print(f"[DEBUG] After finder: validated_grants={len(validated_grants) if isinstance(validated_grants, list) else 'not a list'}")
+            print(f"[DEBUG] After finder: grants_for_display={len(grants_for_display) if isinstance(grants_for_display, list) else 'not a list'}")
             
-            if validated_grants:
-                ctx.session.state["grants_for_display"] = validated_grants
-                print(f"[DEBUG] Stored {len(validated_grants)} grants in grants_for_display")
+            # Ensure workflow advances (tool should have set this, but double-check)
+            if ctx.session.state.get("workflow_step") != "awaiting_grant_selection":
+                ctx.session.state["workflow_step"] = "awaiting_grant_selection"
             
-            # Transition to awaiting user selection
-            ctx.session.state["workflow_step"] = "awaiting_grant_selection"
             print("[DEBUG] Finder finished. Workflow set to awaiting_grant_selection")
             
             return
@@ -236,10 +210,37 @@ class OrchestratorAgent(Agent):
         # ==================================================================
         elif workflow_step == "grant_writing":
             print("[DEBUG] Entering Grant Writer Logic.")
+            
+            # The grant writer uses save_grant_draft tool to save draft to state
+            # We just need to pass through events and suppress the draft text from chat
             async for event in self.writer_agent.run_async(ctx):
                 if is_empty_text_event(event):
                     continue
-                yield event
+                
+                # Check if this is a text event - suppress draft content from chat
+                has_text = False
+                event_text = ""
+                if hasattr(event, 'content') and event.content:
+                    if hasattr(event.content, 'parts'):
+                        for part in event.content.parts:
+                            if hasattr(part, 'text') and part.text:
+                                has_text = True
+                                event_text = part.text
+                                break
+                
+                if has_text:
+                    # Only yield short messages (acknowledgements), suppress long draft text
+                    # The draft is saved via the save_grant_draft tool
+                    if len(event_text.strip()) < 200:
+                        print(f"[DEBUG] Yielding short message: {event_text[:100]}")
+                        yield event
+                    else:
+                        print(f"[DEBUG] Suppressing draft text from chat (length: {len(event_text)})")
+                else:
+                    # Non-text events (tool calls, tool responses) pass through
+                    yield event
+            
+            print("[DEBUG] Grant writer finished")
             return
 
         else:

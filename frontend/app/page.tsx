@@ -5,6 +5,7 @@ import { TextMessage, MessageRole } from "@copilotkit/runtime-client-gql";
 import { CopilotSidebar } from "@copilotkit/react-ui";
 import "@copilotkit/react-ui/styles.css";
 import { useState, useEffect } from "react";
+import ReactMarkdown from "react-markdown";
 
 // --- Interfaces (Same as before) ---
 interface DepartmentProfile {
@@ -81,6 +82,7 @@ function MainContent() {
     grants_for_display?: Grant[];
     selected_grant_for_writing?: Grant;
     grant_draft?: string;
+    grant_draft_for_display?: string;
   }>({
     name: "civic-grant-agent",
     initialState: {
@@ -134,7 +136,13 @@ function MainContent() {
     }
     
     // Sync grant draft from backend (comes from grant_writer)
-    if (agentState.grant_draft) {
+    if (agentState.grant_draft_for_display) {
+      setGrantDraft(prev => {
+        if (prev === agentState.grant_draft_for_display) return prev;
+        console.log("Syncing grant draft from backend (grant_draft_for_display)");
+        return agentState.grant_draft_for_display!;
+      });
+    } else if (agentState.grant_draft) {
       setGrantDraft(prev => {
         if (prev === agentState.grant_draft) return prev;
         console.log("Syncing grant draft from backend");
@@ -342,6 +350,7 @@ function MainContent() {
     <main className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
       <CopilotSidebar
         defaultOpen={true}
+        clickOutsideToClose={false}
         labels={{
             title: "Grant Assistant",
             initial: "Hi! I'm here to help you find grants. Tell me about your department.",
@@ -636,6 +645,13 @@ function GrantsView({ grants, onSelectGrant, selectedGrant }: {
   onSelectGrant: (grant: Grant) => void;
   selectedGrant: Grant | null;
 }) {
+  // Sort grants by eligibility_score descending (highest match first)
+  const sortedGrants = [...grants].sort((a, b) => {
+    const scoreA = a.eligibility_score ?? 0;
+    const scoreB = b.eligibility_score ?? 0;
+    return scoreB - scoreA;
+  });
+
   return (
     <div className="bg-white rounded-lg shadow-xl p-6">
       <div className="flex items-center justify-between mb-4">
@@ -646,7 +662,7 @@ function GrantsView({ grants, onSelectGrant, selectedGrant }: {
       </div>
 
       <div className="space-y-3">
-        {grants.map((grant, idx) => (
+        {sortedGrants.map((grant, idx) => (
           <div
             key={idx}
             onClick={() => onSelectGrant(grant)}
@@ -659,14 +675,25 @@ function GrantsView({ grants, onSelectGrant, selectedGrant }: {
             <div className="flex items-start justify-between">
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-1">
-                  {grant.priority_rank && (
-                    <span className="px-2 py-0.5 bg-purple-100 text-purple-700 text-xs font-semibold rounded">
-                      #{grant.priority_rank}
-                    </span>
-                  )}
+                  <span className="px-2 py-0.5 bg-purple-100 text-purple-700 text-xs font-semibold rounded">
+                    #{idx + 1}
+                  </span>
                   <h3 className="font-semibold text-gray-900">{grant.name}</h3>
                 </div>
-                <p className="text-sm text-gray-600 mb-2">{grant.source}</p>
+                <p className="text-sm text-gray-600 mb-2">
+                  {grant.source}
+                  {grant.url && (
+                    <a 
+                      href={grant.url} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="ml-2 text-blue-600 hover:text-blue-800 hover:underline"
+                    >
+                      🔗 {new URL(grant.url).hostname}
+                    </a>
+                  )}
+                </p>
                 <p className="text-sm text-gray-700 mb-2">{grant.description}</p>
                 
                 {grant.funding_range && (
@@ -762,12 +789,8 @@ function GrantDraftView({ draft, selectedGrant, onClear }: {
         </div>
       )}
       
-      <div className="prose prose-sm max-w-none">
-        <div 
-          className="whitespace-pre-wrap font-mono text-sm bg-gray-50 p-4 rounded-lg border overflow-auto max-h-[600px]"
-        >
-          {draft}
-        </div>
+      <div className="prose prose-sm max-w-none overflow-auto max-h-[600px] bg-gray-50 p-4 rounded-lg border">
+        <ReactMarkdown>{draft}</ReactMarkdown>
       </div>
     </div>
   );

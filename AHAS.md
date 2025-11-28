@@ -282,4 +282,198 @@ def my_tool(tool_context: ToolContext, data: dict):
 
 ---
 
+## Tool Type Annotations & Gemini API
+
+### 🔍 List Parameters Without Item Types Break Gemini API
+
+**Problem**: Tool function with `grants: list` parameter caused a 400 Bad Request error:
+```
+GenerateContentRequest.tools[0].function_declarations[1].parameters.properties[grants].items: missing field
+```
+
+**Root Cause**: When ADK converts Python function signatures to Gemini tool schemas, a bare `list` type doesn't specify what type of items are in the list. The Gemini API requires the `items` field to be present in array schemas.
+
+**Discovery**: The Gemini API schema validation is strict. `list[str]` or `list[dict]` might work, but complex nested types (like a list of grant objects with specific fields) create unwieldy schemas.
+
+**Solution**: Accept a JSON string instead of a list, then parse it server-side:
+
+```python
+# ❌ Breaks Gemini API - "items: missing field"
+def save_grants_to_state(tool_context: ToolContext, grants: list):
+    tool_context.state["grants"] = grants
+
+# ✅ Works - accept JSON string, parse in function
+def save_grants_to_state(tool_context: ToolContext, grants_json: str):
+    """
+    Args:
+        grants_json: JSON string containing an array of grant objects
+    """
+    import json
+    grants = json.loads(grants_json)
+    tool_context.state["grants"] = grants
+```
+
+**Instruction Update**: Tell the agent to pass a JSON string:
+```
+Call save_grants_to_state(grants_json='[{"name": "Grant Name", ...}]')
+```
+
+---
+
+### 🔍 output_key Captures Last Text, Gets Overwritten
+
+**Problem**: Using `output_key="validated_grants"` to capture agent output seemed to work, but the value would get overwritten by subsequent messages.
+
+**Root Cause**: `output_key` captures the **last text output** from the agent's response. If the user sends a follow-up message and the agent responds with "Sorry, I can't help with that", that text overwrites the previously stored grants.
+
+**Example of failure**:
+```python
+# After finder runs, validated_grants = '[{"name": "AFG Grant"...}]' ✓
+# User sends: "tell me more about the first one"
+# Agent responds: "Sorry, I can't create an application draft without..."
+# Now validated_grants = "Sorry, I can't create an application draft..." ✗
+```
+
+**Solution**: Use tool-based state saving instead of `output_key` for data that needs to persist:
+
+```python
+# ❌ Gets overwritten by subsequent agent text output
+Agent(
+    name="GrantFinder",
+    output_key="validated_grants",  # Fragile!
+    ...
+)
+
+# ✅ Explicit tool saves to state - won't be overwritten
+def save_grants_to_state(tool_context: ToolContext, grants_json: str):
+    grants = json.loads(grants_json)
+    tool_context.state["validated_grants"] = grants
+    tool_context.state["grants_for_display"] = grants  # For frontend sync
+    return f"Saved {len(grants)} grants"
+
+Agent(
+    name="GrantFinder", 
+    tools=[search_web, save_grants_to_state],  # Tool saves explicitly
+    instruction="...You MUST call save_grants_to_state before your final message..."
+)
+```
+
+---
+
+### 🔍 CopilotKit Actions Only Available to Root Agent
+
+**Problem**: Tried to have sub-agents (GrantFinder) call frontend actions to display grants. Actions were never triggered.
+
+**Discovery**: CopilotKit actions registered via `useCopilotAction` are only available to the **root agent** (orchestrator). Sub-agents cannot see or call these actions.
+
+**Why**: The action definitions are passed in the initial request context. When the orchestrator delegates to a sub-agent, that sub-agent has its own tool set defined in its constructor, not the frontend actions.
+
+**Solution**: Sub-agents must use `tool_context.state` to write data that syncs to frontend via `useCoAgent`. The frontend then reacts to state changes.
+
+```javascript
+// Frontend: Sync grants from backend state
+const { state: agentState } = useCoAgent({ name: "Orchestrator" });
+
+useEffect(() => {
+    if (agentState.grants_for_display) {
+        setGrants(agentState.grants_for_display);
+    }
+}, [agentState.grants_for_display]);
+```
+
+---
+
+### 🔍 LoopAgent Doesn't Accept `agent` Parameter
+
+**Problem**: Tried to use `LoopAgent` to wrap a sub-agent for iterative refinement:
+```python
+LoopAgent(
+    name="GrantFinder",
+    agent=my_finder_agent,  # ❌ Error!
+    max_iterations=5
+)
+```
+
+**Error**: Pydantic validation error - `agent` is not a valid parameter.
+
+**Discovery**: `LoopAgent` in Google ADK works differently than expected. It doesn't wrap another agent; it's designed for specific iteration patterns with its own configuration.
+
+**Solution**: For simple "run once and capture output" cases, just use a regular `Agent`. If you need iteration, implement the loop in the orchestrator.
+
+---
+
 *Last updated: November 27, 2025*
+
+---
+
+## State-Based Grant Filtering
+
+### 🔍 Grants from Other State Organizations Match Incorrectly
+
+**Problem**: When searching for grants, the system was returning grants from state-specific organizations (e.g., "Ohio State Fire Marshal") as high matches for departments in other states (e.g., North Carolina).
+
+**Root Cause**: The grant finder agent relied on LLM scoring which didn't have awareness of the department's state when evaluating eligibility. State names appearing in grant organization names weren't being properly cross-referenced against the department's location.
+
+**Solution**: Implemented server-side state filtering in `save_grants_to_state`:
+
+1. Added a comprehensive list of US state names
+2. When grants are saved, extract any state names from the grant name/source
+3. If a grant is state-specific (has state names in its name/source):
+   - Include it only if the department is in that state
+   - Filter it out if the department is in a different state
+4. Federal grants (FEMA, DHS, etc.) are always included regardless of state
+
+```python
+def filter_grants_by_state(grants: list, department_state: str) -> list:
+    """Filter out grants specific to other states."""
+    for grant in grants:
+        # Federal grants always pass
+        if is_federal_grant(grant_name, grant_source, grant_desc):
+            filtered_grants.append(grant)
+            continue
+        
+        # Check if grant is state-specific
+        grant_states = get_grant_states(grant_name, grant_source)
+        
+        if grant_states:
+            # Only include if department is in that state
+            if dept_state_lower in grant_states:
+                filtered_grants.append(grant)
+            # Otherwise, filter it out
+```
+
+**Key Insight**: Client-side filtering wouldn't work here because the grants are saved to state before reaching the frontend. Server-side filtering ensures only relevant grants are ever shown.
+
+---
+
+## Grant Writer Output Control
+
+### 🔍 Grant Writer Outputs Full Markdown to Chat
+
+**Problem**: The grant writer agent was outputting the entire grant application draft as markdown text in the chat window, making for a poor UX when the draft should be displayed in a dedicated UI panel.
+
+**Root Cause**: The agent was using `output_key="grant_draft"` which captures the last text output. The instructions told it to "return the complete draft in markdown format", so it did exactly that - to the chat.
+
+**Solution**: Changed from text output to tool-based state saving:
+
+1. Added a `save_grant_draft` tool that saves the draft to state
+2. Updated instructions to tell the agent to:
+   - Generate the draft internally (not output to chat)
+   - Call `save_grant_draft(draft_markdown='...', grant_name='...')`
+   - Only output a short acknowledgement to chat
+
+```python
+def save_grant_draft(tool_context: ToolContext, draft_markdown: str, grant_name: str):
+    """Save the draft to state for UI display."""
+    tool_context.state["grant_draft"] = draft_markdown
+    tool_context.state["grant_draft_for_display"] = draft_markdown
+    return f"Draft saved. Now output ONLY: '👈 The grant application draft for {grant_name} is ready for review.'"
+```
+
+**Key Pattern**: When you want an agent to produce output for a UI panel instead of the chat:
+1. Create a tool that saves the output to state
+2. Instruct the agent to call that tool
+3. Have the frontend sync that state key to the appropriate UI component
+4. Tell the agent to output only a short confirmation message
+
+**Why Not Just Parse Chat Output?**: Parsing markdown from chat output is fragile. The agent might add commentary, the format might vary, or the AG-UI protocol might chunk the text differently. Using a tool guarantees the exact content you want ends up in state.

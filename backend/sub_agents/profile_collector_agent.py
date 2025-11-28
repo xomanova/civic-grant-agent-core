@@ -2,100 +2,12 @@
 ProfileCollector Agent
 """
 from google.adk.agents import LlmAgent
-from google.adk.agents.callback_context import CallbackContext
 from google.adk.models.google_llm import Gemini
-from google.adk.tools.tool_context import ToolContext
-from tools.web_search import search_web
 from google.genai import types
+from tools.web_search import search_web
+from tools.profile_tools import updateDepartmentProfile, exit_profile_loop, on_before_agent
 import os
 
-# ============================================================================
-# TOOL: Update Department Profile (Backend State Writer)
-# ============================================================================
-def updateDepartmentProfile(tool_context: ToolContext, profileData: dict):
-    """
-    Update the department profile with new information.
-    """
-    print(f"[Backend] updateDepartmentProfile saving data: {profileData}")
-    
-    # 1. Get current profile from state
-    raw_profile = tool_context.state.get("civic_grant_profile", {})
-    if not isinstance(raw_profile, dict): 
-        raw_profile = {}
-    print(f"[Backend] Current civic_grant_profile before merge: {raw_profile}")
-    
-    # 2. Deep merge the new data into existing profile
-    def deep_merge(base: dict, updates: dict) -> dict:
-        """Recursively merge updates into base dict."""
-        result = base.copy()
-        for key, value in updates.items():
-            if key in result and isinstance(result[key], dict) and isinstance(value, dict):
-                result[key] = deep_merge(result[key], value)
-            else:
-                result[key] = value
-        return result
-    
-    current_profile = deep_merge(raw_profile, profileData)
-
-    # 3. Save to State - use tool_context.state for AG-UI sync
-    tool_context.state["civic_grant_profile"] = current_profile
-    print(f"[Backend] civic_grant_profile after save: {tool_context.state.get('civic_grant_profile')}")
-    
-    return "Profile updated successfully."
-
-# Exit Tool
-def exit_profile_loop(tool_context: ToolContext, final_profile_data: dict):
-    """
-    Mark profile as complete and transition to grant scouting.
-    Merges final_profile_data with existing profile (does not overwrite).
-    
-    Args:
-        final_profile_data: Optional final profile data to merge. Can be empty dict {}.
-    """
-    print(f"[Backend] Exiting profile loop. final_profile_data: {final_profile_data}")
-    
-    # Get existing profile - DON'T overwrite it!
-    existing_profile = tool_context.state.get("civic_grant_profile", {})
-    if not isinstance(existing_profile, dict):
-        existing_profile = {}
-    
-    print(f"[Backend] Existing profile before merge: {list(existing_profile.keys())}")
-    
-    # Only merge if final_profile_data has content (not empty dict)
-    if final_profile_data and isinstance(final_profile_data, dict) and len(final_profile_data) > 0:
-        # Deep merge final data into existing
-        def deep_merge(base: dict, updates: dict) -> dict:
-            result = base.copy()
-            for key, value in updates.items():
-                if key in result and isinstance(result[key], dict) and isinstance(value, dict):
-                    result[key] = deep_merge(result[key], value)
-                else:
-                    result[key] = value
-            return result
-        existing_profile = deep_merge(existing_profile, final_profile_data)
-        print(f"[Backend] Profile after merge: {list(existing_profile.keys())}")
-    else:
-        print(f"[Backend] No merge needed - using existing profile")
-    
-    # Save merged profile back
-    tool_context.state["civic_grant_profile"] = existing_profile
-    tool_context.state["profile_complete"] = True
-    tool_context.state["workflow_step"] = "grant_scouting"
-    
-    print(f"[Backend] Final civic_grant_profile keys: {list(existing_profile.keys())}")
-    print(f"[Backend] profile_complete: True, workflow_step: grant_scouting")
-    
-    return "Profile completed! Tell the user their profile is complete and ask them to say 'find grants' or 'search for grants' to start searching for matching grant opportunities."
-
-# Callback to initialize state before agent runs
-def on_before_agent(callback_context):
-    """Initialize civic_grant_profile state if it doesn't exist."""
-    if "civic_grant_profile" not in callback_context.state:
-        callback_context.state["civic_grant_profile"] = {}
-        print("[Backend] Initialized civic_grant_profile in state")
-    if "profile_complete" not in callback_context.state:
-        callback_context.state["profile_complete"] = False
-    return None
 
 def create_profile_collector_agent(retry_config: types.HttpRetryOptions) -> LlmAgent:
     return LlmAgent(
@@ -109,7 +21,7 @@ def create_profile_collector_agent(retry_config: types.HttpRetryOptions) -> LlmA
         
         instruction="""You are the ProfileCollector agent - a friendly intake specialist who helps fire departments and EMS agencies provide their information for grant finding.
 
-**PRIMARY GOAL**: Gather the required information quickly.
+**PRIMARY GOAL**: Gather the required information quickly by combining user input with web search.
 
 ## CRITICAL: YOU MUST CALL TOOLS TO SAVE DATA
 
@@ -126,7 +38,7 @@ Example: If user says "We're Halls Fire Department in Clinton, NC with a $185,00
 **CRITICAL RULES (DO NOT BREAK):**
 1. **SAVE BEFORE RESPONDING**: Always call `updateDepartmentProfile` BEFORE your text response
 2. **EXTRACT BEFORE ASKING**: Parse user input for ALL data points
-3. **PUBLIC DATA = SEARCH**: Use search for public info like county/population
+3. **PROACTIVE SEARCH**: Once you have name + city/state, use search_web to find additional info
 4. **VERIFICATION BLOCKER**: If verifying search results, STOP and wait for user confirmation
 
 **DATA STRUCTURE for updateDepartmentProfile**:
@@ -144,9 +56,24 @@ Example: If user says "We're Halls Fire Department in Clinton, NC with a $185,00
 1. User sends message with info
 2. Extract ALL data points from the message
 3. **CALL `updateDepartmentProfile` with extracted data** (DO NOT SKIP THIS)
-4. Check what's missing
-5. If County/Pop missing: call `search_web`, then ask user to confirm
-6. Respond to user about what's still needed
+4. If you have name + city/state but missing other info:
+   - Call `search_web("[Department Name] [City] [State] fire department")` to find:
+     - County name
+     - Population served
+     - Year founded
+     - Type (volunteer/paid/combination)
+     - Any other public information
+   - MUST Present found info to user for confirmation
+5. After user confirms or provides corrections, save with `updateDepartmentProfile`
+6. Continue until all required fields are collected
+
+**PROACTIVE SEARCH STRATEGY**:
+Once you know the department name and location, IMMEDIATELY search for:
+- "[Department Name] [City] [State]" - general info
+- "[City] [State] population" - if population unknown
+- "[City] [State] county" - if county unknown
+
+Use search results to pre-fill information, then ask user to confirm accuracy.
 
 **COMPLETION CHECK**:
 When you have: Name, Type, Location (City, State, County, Pop), Budget, Needs, Stats, and Mission:

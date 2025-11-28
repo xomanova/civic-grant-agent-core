@@ -53,69 +53,83 @@ Similarly, existing open-source projects target different audiences:
 
 ## 🏗️ Architecture
 
-This system uses a **multi-agent pipeline** powered by Google's ADK `SequentialAgent`:
+This system uses a **multi-agent architecture** powered by Google's ADK with a custom orchestrator and AG-UI Protocol for real-time frontend communication:
 
-**Pipeline Flow:**
+**Interactive Flow:**
 ```
-Department Profile → GrantScout → GrantValidator → GrantWriter → Complete Draft
+User Chat → Orchestrator → ProfileCollector → GrantFinder → GrantWriter → UI Display
 ```
 
-### Agent 1: GrantScout (Researcher)
-- **Tools**: Google Search
-- **Purpose**: Discovers grant opportunities from the web
-- **Output**: JSON array of potential grants with URLs, descriptions, and deadlines
+### Orchestrator Agent (Router)
+- **Purpose**: Manages workflow state and routes requests to appropriate sub-agents
+- **Features**: Handles profile completion detection, workflow transitions, and state management
+- **Protocol**: Communicates with React frontend via AG-UI Protocol and CopilotKit
 
-### Agent 2: GrantValidator (Analyst)
-- **Tools**: Built-in Code Executor
-- **Purpose**: Analyzes eligibility using Python scoring algorithm
-- **Output**: Validated grants ranked by eligibility score (0.0-1.0)
+### Agent 1: ProfileCollector (Interviewer)
+- **Tools**: Web Search, Profile Update
+- **Purpose**: Conversationally gathers department information through chat
+- **Features**: Enriches profiles with web search data, validates completeness
+- **Output**: Complete department profile stored in session state
+
+### Agent 2: GrantFinder (Scout + Validator)
+- **Tools**: Web Search, Eligibility Checker, State Filter
+- **Purpose**: Discovers grants and validates eligibility in one step
+- **Features**: State-based filtering, federal grant detection, match scoring (0-100%)
+- **Output**: Ranked grants displayed as interactive cards in the UI
 
 ### Agent 3: GrantWriter (Drafter)
-- **Tools**: Gemini language model (temperature=0.7)
+- **Tools**: Save Draft
 - **Purpose**: Generates professional grant application narratives
-- **Output**: Complete grant draft with all required sections
+- **Output**: Complete grant draft displayed with rich markdown rendering
 
-**State Management:** Each agent's output is stored in session state and automatically injected into the next agent's context using placeholder variables (e.g., `{grant_opportunities}`, `{validated_grants}`).
+**State Management:** Session state syncs bidirectionally between backend and frontend via AG-UI Protocol. The frontend uses CopilotKit's `useCoAgent` hook for real-time state updates.
 
 ## Agent Flow Diagram
 ```mermaid
 graph LR
-    A[User Input:<br/>Department Profile] --> B[SequentialAgent Pipeline]
-    B --> C[Agent 1: GrantScout<br/>Google Search]
-    C -->|grant_opportunities| D[Agent 2: GrantValidator<br/>Code Execution]
-    D -->|validated_grants| E[Agent 3: GrantWriter<br/>Gemini Text Generation]
-    E -->|grant_draft| F[Complete Application]
+    A[User Chat] --> B[Orchestrator Agent]
+    B --> C[ProfileCollector<br/>Web Search + Profile Tools]
+    C -->|civic_grant_profile| B
+    B --> D[GrantFinder<br/>Search + Eligibility Check]
+    D -->|grants_for_display| E[Grant Cards UI]
+    E -->|User Clicks Grant| B
+    B --> F[GrantWriter<br/>Draft Generation]
+    F -->|grant_draft| G[Draft Viewer UI]
     
     style A fill:#e1f5ff
+    style B fill:#f0f0f0
     style C fill:#fff3cd
     style D fill:#d4edda
-    style E fill:#f8d7da
-    style F fill:#d1ecf1
+    style F fill:#f8d7da
+    style E fill:#d1ecf1
+    style G fill:#d1ecf1
 ```
 
 ## 📋 Key Features
 
-### Multi-Agent Pipeline Architecture
-- **SequentialAgent Orchestration**: Agents automatically pass outputs to the next agent in the pipeline
-- **State Management**: Session state stores intermediate results using `output_key` parameters
-- **Variable Injection**: Automatic placeholder replacement (e.g., `{grant_opportunities}`)
+### Custom Orchestrator Architecture
+- **Workflow State Machine**: Manages transitions between profile building, grant scouting, and draft writing
+- **AG-UI Protocol**: Real-time bidirectional state sync with React frontend
+- **Smart Routing**: Detects profile completeness and routes to appropriate agent
 
-### Agent 1: GrantScout (Researcher)
-- **Built-in Tools**: Uses Google Search API to find grant opportunities
-- **Smart Queries**: Generates targeted search queries based on department needs
-- **Comprehensive Coverage**: Searches federal, state, and corporate grant programs
-- **Output**: JSON array of grant opportunities stored in `grant_opportunities` state key
+### Agent 1: ProfileCollector (Interviewer)
+- **Conversational UX**: Gathers department info through natural chat interaction
+- **Web Enrichment**: Uses web search to find additional department details
+- **Profile Validation**: Ensures minimum required fields before advancing
+- **Output**: Department profile stored in `civic_grant_profile` state key
 
-### Agent 2: GrantValidator (Analyst)
-- **Code Execution**: Uses Python to systematically score grant eligibility
-- **Multi-Criteria Analysis**: Evaluates 5 dimensions (type, location, needs, budget, nonprofit status)
-- **Automated Scoring**: Calculates eligibility scores (0.0-1.0) programmatically
-- **Output**: Validated and ranked grants stored in `validated_grants` state key
+### Agent 2: GrantFinder (Scout + Validator)
+- **Comprehensive Search**: Searches FEMA AFG, SAFER, Grants.gov, Firehouse Subs, and more
+- **State-Based Filtering**: Filters out grants from other states (detects state names in URLs too)
+- **Eligibility Scoring**: Multi-criteria analysis with match percentage (0-100%)
+- **Interactive Cards**: Grants displayed as clickable cards with match reasons
+- **Output**: Validated grants stored in `grants_for_display` state key
 
 ### Agent 3: GrantWriter (Drafter)
-- **Gemini-Powered**: Leverages Gemini's advanced language model for high-quality drafts
-- **Context-Aware**: Uses department profile and validated grants from previous agents
-- **Structured Output**: Generates complete grant applications with 7 required sections
+- **Gemini-Powered**: Uses Gemini for high-quality, professional drafts
+- **Tool-Based Saving**: Saves draft via tool call for reliable state sync
+- **7-Section Structure**: Executive Summary, Background, Need, Project, Budget, Impact, Sustainability
+- **Rich Rendering**: Draft displayed with markdown formatting in dedicated panel
 - **Output**: Professional draft stored in `grant_draft` state key
 
 
@@ -123,29 +137,24 @@ graph LR
 
 This project demonstrates proficiency with Google's Agent Developer Kit:
 
-- ✅ **Multi-Agent Architecture**: Uses `SequentialAgent` to orchestrate three specialized agents
-- ✅ **Built-in Tools**: Google Search tool in GrantScout agent
-- ✅ **Code Execution**: `BuiltInCodeExecutor` in GrantValidator for systematic eligibility analysis
-- ✅ **State Management**: Agents pass outputs via session state using `output_key` parameters
-- ✅ **Variable Injection**: Automatic placeholder replacement (`{grant_opportunities}`, `{validated_grants}`)
-- ✅ **Effective Use of Gemini**: GrantWriter leverages Gemini for high-quality text generation
+- ✅ **Multi-Agent Architecture**: Custom orchestrator managing three specialized sub-agents
+- ✅ **Custom Tools**: Web search, eligibility checker, profile updater, draft saver
+- ✅ **AG-UI Protocol**: Real-time bidirectional state sync with React/CopilotKit frontend
+- ✅ **State Management**: Session state shared across agents and synced to frontend
+- ✅ **Effective Use of Gemini**: All agents use Gemini for natural language understanding and generation
 - ✅ **Real-World Value**: Solves actual problem faced by volunteer fire departments
 - ✅ **Retry Configuration**: Implements `HttpRetryOptions` for API reliability
+- ✅ **Interactive UI**: Grant cards, profile display, and rich markdown draft viewer
 
 ## 🌐 Deployment
 
-Deploy to Google Cloud Run:
+Deploy the full stack (backend + frontend) to Google Cloud Run and Firebase:
 
 ```bash
-# Build and deploy
-gcloud builds submit --config deployment/cloudbuild.yaml
-
-# Or use Docker
-docker build -t civic-grant-agent .
-docker run -p 8080:8080 civic-grant-agent
+./deployment/firebase-deploy.sh
 ```
 
-See `deployment/` directory for detailed deployment instructions.
+See `deployment/DEPLOYMENT_GUIDE.md` for detailed instructions and configuration options.
 
 ## 🎥 Demo Video
 
@@ -161,7 +170,7 @@ This project is designed to help volunteer fire departments, EMS agencies, and o
 
 - **Firefighters & First Responders** - Share your grant-writing experience and needs
 - **Developers** - Improve the agent framework, add new tools, enhance performance
-- **Grant Professionals** - Help refine prompts and validation logic
+- **Grant Professionals** - Help refine prompts and validation logic, identify grant data sources
 - **Documentation Writers** - Make this tool more accessible to non-technical users
 
 ## 📄 License
