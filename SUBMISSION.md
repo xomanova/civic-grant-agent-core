@@ -1,14 +1,14 @@
 # Civic Grant Agent: AI-Powered Grant Finding for First Responders
 
-**Subtitle:** A free, open-source multi-agent system that helps underfunded volunteer fire departments discover, evaluate, and apply for life-saving funding.
+**Subtitle:** A free, open-source multi-agent system that helps volunteer emergency responders discover, evaluate, and apply for life-saving funding.
 
-**Submission Track:** Agents for Good
+**Submission Track:** Agents for Good of the [Kaggle/Google Agents Intensive: Capstone Project](https://www.kaggle.com/competitions/agents-intensive-capstone-project)
 
 ---
 
 ## The Problem: First Responders Left Behind
 
-Volunteer Fire Departments (VFDs) and EMS agencies are chronically underfunded. These organizations—staffed by neighbors who volunteer their nights and weekends to save lives—depend on complex federal, state, and corporate grants to purchase critical equipment like SCBA masks, turnout gear, and rescue tools.
+Volunteer Fire Departments, Rescue Squads, and EMS agencies are chronically underfunded. These organizations—staffed by neighbors who volunteer their nights and weekends to save lives—depend on complex federal, state, and corporate grants to purchase critical equipment like SCBA masks, turnout gear, and rescue tools.
 
 But here's the cruel irony: **the same volunteers responding to 911 calls are the ones expected to find and write these grants.** They lack the time to research opportunities across dozens of portals and the specialized skills to craft compelling narratives that compete with professionally-staffed departments.
 
@@ -25,7 +25,7 @@ Commercial grant-writing platforms exist (Grantable, GrantWriter, etc.), but the
 This project leverages the **Google Agent Development Kit (ADK)** to democratize grant access. It's not just an app—it's a **digital staff member** that joins the department. It autonomously:
 
 1. **Interviews** the department to understand their unique situation (location, equipment needs, budget)
-2. **Scouts** the web for matching grant opportunities (FEMA AFG, Firehouse Subs Foundation, etc.)
+2. **Scouts** the web for matching grant opportunities (Grants.gov, FEMA AFG, Firehouse Subs Foundation, etc.)
 3. **Filters** results using intelligent state-based eligibility checking
 4. **Drafts** professional grant applications using the department's real data
 
@@ -89,7 +89,7 @@ graph LR
 
 ## Technical Implementation: ADK Concepts Applied
 
-This project demonstrates production-ready implementation of key ADK concepts:
+This project demonstrates implementation of key ADK concepts:
 
 ### 1. Multi-Agent System (Custom Orchestrator)
 Rather than a simple sequential pipeline, I implemented a **custom OrchestratorAgent** that extends `google.adk.agents.Agent` with a `_run_async_impl` method. This orchestrator:
@@ -136,28 +136,55 @@ All agents are powered by **Gemini 2.0 Flash** (`gemini-2.0-flash`), with the Gr
 The system is fully containerized and deployed:
 - **Backend**: FastAPI server with ADK agents, deployed to **Google Cloud Run**
 - **Grants-MCP Sidecar**: MCP server for federal grant searches, runs alongside backend as a Cloud Run sidecar container
-- **Frontend**: Next.js 14 React app with CopilotKit integration
+- **Frontend**: Next.js 14 React app with ag-ui and CopilotKit integration using **Firebase Hosting**
+    - Firebase was put in place to support caching and more dynamic routing in the future
 - **Deployment**: Single-command deployment via `./deployment/firebase-deploy.sh`
+    - An all-in-one script that builds, pushes, and deploys both backend and frontend containers
+    - A bash script is not ideal for a real production system, but was a huge time saver for this demo project
+    - Over time the project should have a more robust CI/CD pipeline and IaC
 
 ---
 
 ## Key Development Insights
 
-### Insight 1: State-Based Grant Filtering
-A significant challenge was filtering grants appropriately. The system needed to:
-- **Include** federal grants (FEMA, USDA) regardless of state
-- **Include** national foundation grants (Firehouse Subs, Gary Sinise)
-- **Exclude** state-specific grants from other states (Ohio Fire Marshal for an NC department)
+### Insight 1: State-Based Grant Filtering — When Geography Gets Complicated
+Grant eligibility often depends on location, but determining "location" from unstructured grant data proved surprisingly complex.
+
+**The Challenge:** The system needed nuanced filtering rules:
+- **Include** federal grants (FEMA, USDA) regardless of department state
+- **Include** national foundation grants (Firehouse Subs, Gary Sinise Foundation)
+- **Exclude** state-specific grants from other states (e.g., Ohio Fire Marshal grants for an NC department)
 - **Detect conflicts** where a grant name mentions one state but the URL indicates another
 
-I implemented `is_federal_grant()`, `is_national_foundation_grant()`, and `get_grant_states()` functions that analyze grant names, sources, and even URL patterns (e.g., detecting `ohio.gov` in a URL to flag Ohio-specific grants).
+**The Complexity:** Grant sources don't follow consistent naming conventions. A grant titled "Rural Fire Department Equipment Program" might be federal, state-specific, or a national foundation—you can't tell from the name alone. URLs provide clues (`.gov` domains, state abbreviations), but require pattern matching across multiple formats.
 
-### Insight 2: Tool-Based State Sync
-Initially, I tried saving grant drafts to state after the agent loop completed—but the state never synced to the frontend. The fix: **state updates must happen via tool calls** during the agent loop, not after. This ensures AG-UI Protocol properly transmits the state change.
+**The Solution:** I implemented a multi-layered detection system with `is_federal_grant()`, `is_national_foundation_grant()`, and `get_grant_states()` functions. These analyze grant names, sources, and URL patterns (e.g., detecting `ohio.gov` in a URL to flag Ohio-specific grants). The system defaults to inclusion when uncertain, preferring false positives over missed opportunities.
 
-### Insight 3: Agent Workflows: The trouble of prescribing behavior in conversational AI
-Getting multiple agents to work together smoothly required careful prompt engineering, and a lot of trial and error. Especially since the LLM's behavior can be unpredictable.
-When the GrantWriter called `save_grant_draft` with markdown content, the LLM sometimes passed literal `\n` characters instead of actual newlines, breaking markdown rendering. The solution: post-process content with `.replace('\\n', '\n')` before saving to state.
+This taught me that real-world data is messy, and agent tools need defensive logic to handle ambiguity gracefully.
+
+### Insight 2: Agent Workflows — The Trouble of Prescribing Behavior in Conversational AI
+Getting multiple agents to work together smoothly required careful prompt engineering and a lot of trial and error—especially since LLM behavior can be unpredictable.
+
+**The Challenge:** When the GrantWriter called `save_grant_draft` with markdown content, the LLM sometimes passed literal `\n` characters instead of actual newlines, completely breaking markdown rendering in the frontend. Other times, agents would ignore tool instructions or call the wrong tools entirely.
+
+**The Reality:** You can't fully "program" an LLM. Unlike traditional code where instructions execute deterministically, prompts are suggestions that the model interprets probabilistically. This means edge cases emerge that you never anticipated, and fixing one behavior can break another.
+
+**The Solution:** A combination of increasingly explicit instructions in system prompts, separation of sub_agent concerns, and defensive post-processing (like `.replace('\\n', '\n')` before saving to shared CoAgent state to render to the user), and accepting that some agent behaviors need runtime guards rather than prompt-based prevention.
+
+This insight shaped my approach: treat agent instructions as strong hints, but always validate and sanitize outputs before they reach the user.
+
+### Insight 3: AG-UI Protocol — The Future of Agent Interfaces
+I knew from the start that I wanted to build something immediately usable by public service agencies—not a CLI demo or notebook, but a real product. I discovered [CopilotKit](https://github.com/CopilotKit/CopilotKit) and the [AG-UI Protocol](https://github.com/ag-ui-protocol/ag-ui), which opened up exciting possibilities but also presented significant challenges.
+
+**The Opportunity:** AG-UI enables bidirectional state synchronization between AI agents and React frontends. This means agents can directly update UI components—rendering grant cards, displaying drafts, and showing real-time profile data—without custom websocket plumbing. It's a glimpse of where agent UX is heading: AI-native interfaces where the model doesn't just respond to the UI, it *drives* it.
+
+**The Challenge:** AG-UI is cutting-edge, which means rough edges. The ADK integration had bugs in event processing that caused state sync failures. I spent considerable time debugging issues that turned out to be library-level problems rather than my code.
+
+**Giving Back:** Rather than just working around the issues, I contributed upstream. I submitted a PR fixing an event processing bug with Google ADK LLM responses—a bug implicated in multiple open issues on the ag-ui repo: [🐛 Bug Report](https://github.com/ag-ui-protocol/ag-ui/issues/735) | [🤝 Fix PR](https://github.com/ag-ui-protocol/ag-ui/pull/745#issuecomment-3588364960)
+
+AG-UI represents an important evolution in how we build agent applications and the audiences with which the most advanced technologies can seamlessly integrate. The extra integration work was worth it to deliver a responsive, accessible interface that volunteer fire chiefs can actually use.
+
+
 
 ---
 
@@ -171,4 +198,3 @@ I am a software engineer by trade, but a volunteer firefighter and EMT by passio
 
 - **GitHub Repository:** https://github.com/xomanova/civic-grant-agent-core
 - **Live Demo:** https://civic-grant-agent.xomanova.io
-- **Video Demo:** [YouTube Link]
