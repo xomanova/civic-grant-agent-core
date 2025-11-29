@@ -1,8 +1,9 @@
-"""
-Draft Storage Tools - ADK tool wrappers for saving grant drafts to state
-"""
+"""Draft Storage Tools - ADK tool wrappers for saving grant drafts to state"""
 
+import logging
 from google.adk.tools.tool_context import ToolContext
+
+logger = logging.getLogger(__name__)
 
 
 def save_grant_draft(tool_context: ToolContext, grant_name: str, draft_content: str):
@@ -13,8 +14,6 @@ def save_grant_draft(tool_context: ToolContext, grant_name: str, draft_content: 
         grant_name: The name of the grant this application is for
         draft_content: The full markdown content of the grant application draft
     """
-    print(f"[Backend] save_grant_draft called for grant: {grant_name}, content length: {len(draft_content)}")
-    
     # Fix escaped newlines - LLM sometimes passes literal \n instead of actual newlines
     cleaned_content = draft_content.replace('\\n', '\n')
     
@@ -27,5 +26,5 @@ def save_grant_draft(tool_context: ToolContext, grant_name: str, draft_content: 
     tool_context.state["workflow_step"] = "draft_ready"
     tool_context.state["grant_name_for_draft"] = grant_name
     
-    print(f"[Backend] Grant draft saved to state (cleaned)")
+    logger.info(f"Grant draft saved for: {grant_name}")
     return f"DONE. Draft for {grant_name} saved successfully. Do not call this tool again. Say: 'Your draft is ready! 👈 Check the left panel to review it.'"

@@ -77,7 +77,6 @@ def get_grant_states(grant_name: str, grant_source: str, grant_url: str = "") ->
             if f"{state_name}.gov" in url_lower or f".{abbrev}.gov" in url_lower or f".{abbrev}.us" in url_lower:
                 if state_name not in found_states:
                     found_states.append(state_name)
-                    print(f"[Backend] Found state '{state_name}' in URL: {grant_url}")
     
     return found_states
 
@@ -94,7 +93,6 @@ def filter_grants_by_state(grants: list, department_state: str) -> list:
         Filtered list of grants that are either federal or match the department's state
     """
     if not department_state:
-        print("[Backend] No department state provided, returning all grants")
         return grants
     
     dept_state_lower = department_state.lower()
@@ -108,13 +106,11 @@ def filter_grants_by_state(grants: list, department_state: str) -> list:
         
         # Always include federal grants
         if is_federal_grant(grant_name, grant_source, grant_desc):
-            print(f"[Backend] Including federal grant: {grant_name}")
             filtered_grants.append(grant)
             continue
         
         # Always include national foundation grants
         if is_national_foundation_grant(grant_name, grant_source):
-            print(f"[Backend] Including national foundation grant: {grant_name}")
             filtered_grants.append(grant)
             continue
         
@@ -130,18 +126,13 @@ def filter_grants_by_state(grants: list, department_state: str) -> list:
             
             # If URL indicates a state that conflicts with name, it's probably bad data
             if url_states and name_states and not any(s in url_states for s in name_states):
-                print(f"[Backend] FILTERING OUT conflicting grant: {grant_name} (name says {name_states}, URL says {url_states})")
                 continue
             
             # Grant is state-specific - only include if department is in that state
             if dept_state_lower in grant_states:
-                print(f"[Backend] Including state-matching grant: {grant_name} (states: {grant_states})")
                 filtered_grants.append(grant)
-            else:
-                print(f"[Backend] FILTERING OUT state-specific grant: {grant_name} (grant states: {grant_states}, dept state: {dept_state_lower})")
         else:
             # No state in grant name/source - assume it's broadly available
-            print(f"[Backend] Including non-state-specific grant: {grant_name}")
             filtered_grants.append(grant)
     
     return filtered_grants

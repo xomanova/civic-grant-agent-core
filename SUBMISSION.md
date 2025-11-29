@@ -49,8 +49,17 @@ I built a dedicated **OrchestratorAgent** that acts as a state machine for the c
 |-------|------|-------|--------|
 | **OrchestratorAgent** | Routes requests based on workflow state | State management | Workflow transitions |
 | **ProfileCollector** | Conducts conversational intake interview | Web Search, Profile Update | `civic_grant_profile` |
-| **GrantFinder** | Discovers and validates grants | Web Search, Eligibility Checker, State Filter | `grants_for_display` |
+| **GrantFinder** | Discovers and validates grants | Web Search, Federal Grants API, Eligibility Checker, State Filter | `grants_for_display` |
 | **GrantWriter** | Generates professional applications | Draft Storage | `grant_draft` |
+
+### Grants-MCP Sidecar
+
+The backend includes a **Grants-MCP sidecar container** that provides an MCP (Model Context Protocol) interface to the **Simpler Grants API** (simpler.grants.gov). This enables the GrantFinder agent to search federal grant opportunities directly from the official government database.
+
+- **Architecture**: Runs as a Cloud Run sidecar container alongside the main backend
+- **Protocol**: JSON-RPC via MCP for tool invocation
+- **Data Source**: Simpler Grants API for real-time federal grant discovery
+- **Tools Exposed**: `opportunity_discovery`, `agency_landscape`, `funding_trend_scanner`
 
 ### System Flow Diagram
 
@@ -60,6 +69,7 @@ graph LR
     B --> C[ProfileCollector<br/>Web Search + Profile Tools]
     C -->|civic_grant_profile| B
     B --> D[GrantFinder<br/>Search + Eligibility Check]
+    D <-->|JSON-RPC| H[Grants-MCP Sidecar<br/>Simpler Grants API]
     D -->|grants_for_display| E[Grant Cards UI]
     E -->|User Clicks Grant| B
     B --> F[GrantWriter<br/>Draft Generation]
@@ -72,6 +82,7 @@ graph LR
     style F fill:#f8d7da
     style E fill:#d1ecf1
     style G fill:#d1ecf1
+    style H fill:#e8daef
 ```
 
 ---
@@ -92,6 +103,7 @@ Each agent has purpose-built tools registered via ADK's tool system:
 
 - **`updateDepartmentProfile`**: Deep-merges incoming profile data with existing state
 - **`exit_profile_loop`**: Signals profile completion and triggers workflow transition
+- **`search_federal_grants`**: Queries the Grants-MCP sidecar for federal opportunities from Simpler Grants API
 - **`save_grants_to_state`**: Stores validated grants with automatic state-based filtering
 - **`save_grant_draft`**: Persists generated drafts and handles newline escaping for markdown rendering
 
@@ -123,6 +135,7 @@ All agents are powered by **Gemini 2.0 Flash** (`gemini-2.0-flash`), with the Gr
 ### 6. Agent Deployment (Bonus)
 The system is fully containerized and deployed:
 - **Backend**: FastAPI server with ADK agents, deployed to **Google Cloud Run**
+- **Grants-MCP Sidecar**: MCP server for federal grant searches, runs alongside backend as a Cloud Run sidecar container
 - **Frontend**: Next.js 14 React app with CopilotKit integration
 - **Deployment**: Single-command deployment via `./deployment/firebase-deploy.sh`
 
@@ -142,7 +155,8 @@ I implemented `is_federal_grant()`, `is_national_foundation_grant()`, and `get_g
 ### Insight 2: Tool-Based State Sync
 Initially, I tried saving grant drafts to state after the agent loop completed—but the state never synced to the frontend. The fix: **state updates must happen via tool calls** during the agent loop, not after. This ensures AG-UI Protocol properly transmits the state change.
 
-### Insight 3: Escaped Newlines in LLM Output
+### Insight 3: Agent Workflows: The trouble of prescribing behavior in conversational AI
+Getting multiple agents to work together smoothly required careful prompt engineering, and a lot of trial and error. Especially since the LLM's behavior can be unpredictable.
 When the GrantWriter called `save_grant_draft` with markdown content, the LLM sometimes passed literal `\n` characters instead of actual newlines, breaking markdown rendering. The solution: post-process content with `.replace('\\n', '\n')` before saving to state.
 
 ---

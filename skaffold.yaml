@@ -8,6 +8,10 @@ build:
       context: .
       docker:
         dockerfile: backend/Dockerfile
+    - image: grants-mcp-sidecar
+      context: grants-mcp
+      docker:
+        dockerfile: Dockerfile
 manifests:
   rawYaml:
     - k8s/deployment.yaml
