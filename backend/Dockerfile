@@ -10,6 +10,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy backend code
 COPY backend/app.py .
 COPY backend/ag_ui_fix.py .
+COPY backend/agent_card.py .
 
 # Copy agent configuration
 COPY backend/agent_config.py .
