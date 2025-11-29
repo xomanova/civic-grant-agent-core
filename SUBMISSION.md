@@ -75,14 +75,14 @@ graph LR
     B --> F[GrantWriter<br/>Draft Generation]
     F -->|grant_draft| G[Draft Viewer UI]
     
-    style A fill:#e1f5ff
-    style B fill:#f0f0f0
-    style C fill:#fff3cd
-    style D fill:#d4edda
-    style F fill:#f8d7da
-    style E fill:#d1ecf1
-    style G fill:#d1ecf1
-    style H fill:#e8daef
+    style A fill:#e1f5ff,color:#000
+    style B fill:#f0f0f0,color:#000
+    style C fill:#fff3cd,color:#000
+    style D fill:#d4edda,color:#000
+    style F fill:#f8d7da,color:#000
+    style E fill:#d1ecf1,color:#000
+    style G fill:#d1ecf1,color:#000
+    style H fill:#e8daef,color:#000
 ```
 
 ---
