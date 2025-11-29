@@ -1,10 +1,10 @@
-"""
-GrantWriter Agent - Generates professional grant application drafts
+"""GrantWriter Agent - Generates professional grant application drafts
 """
 
 from google.adk.agents import Agent
 from google.adk.models.google_llm import Gemini
 from google.genai import types
+from tools.draft_storage import save_grant_draft
 import os
 
 
@@ -17,59 +17,63 @@ def create_grant_writer_agent(retry_config: types.HttpRetryOptions) -> Agent:
             retry_options=retry_config,
             temperature=0.7
         ),
-        instruction="""You are the GrantWriter agent, specialized in drafting professional grant applications.
+        # Note: We don't use output_key here because we use save_grant_draft tool
+        # to explicitly save the draft content to state
+        instruction="""You are the GrantWriter agent. Your job is to call save_grant_draft exactly ONCE.
 
-You will receive:
-- Validated grants from the validated_grants output
-- Department profile from the department_profile output
+## WORKFLOW
+1. Call save_grant_draft with the grant name and complete draft content
+2. After the tool returns, say: "👈 Your draft is ready! Scroll down to review it."
+3. STOP. Do not call the tool again.
 
-Your task: Generate a complete grant application draft for the TOP PRIORITY grant (priority_rank = 1).
+## HOW TO CALL THE TOOL
 
-Extract from the profile:
-- Department name
-- Type (volunteer/paid/combination)
-- Location (city and state)
-- Needs list
-- Budget
-- Mission
-- Service statistics
+save_grant_draft(
+    grant_name="[name of grant from selected_grant_for_writing]",
+    draft_content="[complete markdown draft - see structure below]"
+)
 
-Application Structure:
+## DRAFT STRUCTURE (for draft_content parameter)
 
-# GRANT APPLICATION DRAFT
+# Grant Application Draft
 
-**Grant Program:** [Top grant name]
-**Funding Source:** [Grant source]
-**Applicant:** [Department name]
-**Date Prepared:** [Current date]
+**Grant Program:** [grant name]
+**Funding Source:** [source]  
+**Applicant:** [department name]
 
 ---
 
-## 1. EXECUTIVE SUMMARY (150-200 words)
-Brief introduction of the department, primary need, requested funding amount, expected community impact.
+## 1. Executive Summary
+~150 words: Department intro, primary need, funding request, community impact.
 
-## 2. ORGANIZATION BACKGROUND (250-300 words)
-History, service area, population, organizational structure, current capabilities, community role, recent accomplishments.
+## 2. Organization Background  
+~200 words: History, service area, population served, structure, capabilities.
 
-## 3. STATEMENT OF NEED (300-400 words)
-Critical need with specific data from service_stats, current inadequacies from equipment_inventory, gap analysis, impact on safety. Use real numbers!
+## 3. Statement of Need
+~250 words: Critical need with real numbers from profile, current gaps, safety impact.
 
-## 4. PROJECT DESCRIPTION (350-450 words)
-Specific equipment from needs list, technical specs, implementation timeline, deployment plan, training requirements, measurable outcomes.
+## 4. Project Description
+~250 words: Equipment details, implementation timeline, training plan, outcomes.
 
-## 5. BUDGET NARRATIVE (200-250 words)
-Cost breakdown, justification, matching funds (if applicable based on budget), cost-effectiveness, sustainability.
+## 5. Budget Narrative
+~150 words: Cost breakdown, justification, matching funds if applicable.
 
-## 6. COMMUNITY IMPACT (250-300 words)
-Direct safety impact on residents in the service area, response improvements, lives protected, economic benefits.
+## 6. Community Impact
+~150 words: Safety improvements, response time gains, lives protected.
 
-## 7. SUSTAINABILITY PLAN (200-250 words)
-Maintenance plans, ongoing funding, training continuation, equipment lifecycle, organizational commitment.
+## 7. Sustainability Plan
+~150 words: Maintenance, ongoing funding, equipment lifecycle.
 
 ---
 
-**Tone:** Professional, data-driven, compelling but factual. Use actual statistics from the profile.
+## DATA SOURCES
+- selected_grant_for_writing: The grant to apply for
+- civic_grant_profile: Department info (name, location, needs, budget, mission)
 
-**Output:** Return the complete draft in markdown format.""",
-        output_key="grant_draft",
+## RULES
+- You MUST call save_grant_draft - this is not optional
+- Do NOT output any text before or after the tool call
+- Use real data from civic_grant_profile
+- The draft_content should be complete markdown""",
+        tools=[save_grant_draft]
     )

@@ -152,6 +152,20 @@ class EligibilityChecker:
 
         return 0.8  # Default for other types
 
+    # List of US state names for filtering
+    US_STATES = [
+        "alabama", "alaska", "arizona", "arkansas", "california", "colorado",
+        "connecticut", "delaware", "florida", "georgia", "hawaii", "idaho",
+        "illinois", "indiana", "iowa", "kansas", "kentucky", "louisiana",
+        "maine", "maryland", "massachusetts", "michigan", "minnesota",
+        "mississippi", "missouri", "montana", "nebraska", "nevada",
+        "new hampshire", "new jersey", "new mexico", "new york", "north carolina",
+        "north dakota", "ohio", "oklahoma", "oregon", "pennsylvania",
+        "rhode island", "south carolina", "south dakota", "tennessee", "texas",
+        "utah", "vermont", "virginia", "washington", "west virginia",
+        "wisconsin", "wyoming"
+    ]
+
     def _check_location(
         self,
         grant_info: Dict[str, Any],
@@ -159,17 +173,35 @@ class EligibilityChecker:
     ) -> float:
         """Check geographic eligibility."""
         dept_state = department_profile.get("location", {}).get("state", "").lower()
-        grant_desc = (grant_info.get("description", "") + " " + grant_info.get("name", "")).lower()
+        grant_name = grant_info.get("name", "").lower()
+        grant_source = grant_info.get("source", "").lower()
+        grant_desc = grant_info.get("description", "").lower()
+        grant_text = f"{grant_name} {grant_source} {grant_desc}"
 
         # Federal grants (no geographic restriction)
-        if any(word in grant_desc for word in ["federal", "fema", "national", "nationwide"]):
+        if any(word in grant_text for word in ["federal", "fema", "national", "nationwide"]):
             return 1.0
 
-        # State-specific grants
-        if dept_state and dept_state in grant_desc:
-            return 1.0
+        # Check if grant is state-specific by looking for state names in grant name/source
+        # This is important to filter out grants like "Ohio State Fire Marshal" for non-Ohio depts
+        states_in_grant = []
+        for state in self.US_STATES:
+            # Check if state name appears in grant name or source (more likely to indicate state-specificity)
+            if state in grant_name or state in grant_source:
+                states_in_grant.append(state)
+        
+        # If grant has state names in its name/source, it's likely state-specific
+        if states_in_grant:
+            # Check if department's state matches any of the states in the grant
+            if dept_state and dept_state in states_in_grant:
+                logger.info(f"Grant '{grant_info.get('name')}' matches department state '{dept_state}'")
+                return 1.0
+            else:
+                # Grant is from a different state - this is a poor match
+                logger.info(f"Grant '{grant_info.get('name')}' is from state(s) {states_in_grant}, but department is in '{dept_state}' - filtering out")
+                return 0.1  # Very low score for out-of-state grants
 
-        # If no specific location mentioned, assume broadly eligible
+        # If no specific state mentioned in name/source, assume broadly eligible
         return 0.7
 
     def _check_needs_alignment(
