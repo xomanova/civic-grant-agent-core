@@ -136,6 +136,11 @@ function MainContent() {
     }
     
     // Sync grant draft from backend (comes from grant_writer)
+    console.log("Checking for grant draft:", {
+      grant_draft_for_display: agentState.grant_draft_for_display ? `${agentState.grant_draft_for_display.substring(0, 50)}...` : undefined,
+      grant_draft: agentState.grant_draft ? `${agentState.grant_draft.substring(0, 50)}...` : undefined
+    });
+    
     if (agentState.grant_draft_for_display) {
       setGrantDraft(prev => {
         if (prev === agentState.grant_draft_for_display) return prev;
@@ -152,7 +157,7 @@ function MainContent() {
     
     // Sync workflow_step - only advance, never regress (unless it's a reset)
     if (agentState.workflow_step) {
-      const stepOrder = ["profile_building", "grant_scouting", "grant_validation", "awaiting_grant_selection", "grant_writing"];
+      const stepOrder = ["profile_building", "grant_scouting", "grant_validation", "awaiting_grant_selection", "grant_writing", "draft_ready"];
       setWorkflowStep(prev => {
         const prevIndex = stepOrder.indexOf(prev);
         const newIndex = stepOrder.indexOf(agentState.workflow_step);
