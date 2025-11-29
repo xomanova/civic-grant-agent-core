@@ -198,3 +198,4 @@ I am a software engineer by trade, but a volunteer firefighter and EMT by passio
 
 - **GitHub Repository:** https://github.com/xomanova/civic-grant-agent-core
 - **Live Demo:** https://civic-grant-agent.xomanova.io
+- **A2A Agent Card:** https://civic-grant-agent-core.xomanova.io/.well-known/agent.json

@@ -28,6 +28,7 @@ from ag_ui_adk import ADKAgent, add_adk_fastapi_endpoint
 
 sys.path.append('/app')
 from agent_config import root_agent
+from agent_card import civic_grant_agent_card
 
 # Verify API key
 if not os.getenv("GOOGLE_API_KEY"):
@@ -88,10 +89,17 @@ async def root():
         "status": "running",
         "protocol": "AG-UI",
         "endpoints": {
-            "ag_ui": "/ (AG-UI stream endpoint - POST only)",
-            "health": "/health"
+            "ag_ui": "/api/copilotkit (AG-UI stream endpoint)",
+            "health": "/health",
+            "agent_card": "/.well-known/agent.json"
         }
     }
+
+
+@app.get("/.well-known/agent.json")
+async def get_agent_card():
+    """A2A Protocol Agent Card endpoint for agent discovery"""
+    return civic_grant_agent_card.model_dump(by_alias=True, exclude_none=True)
 
 
 # Add the ADK endpoint - handles all AG-UI protocol communication
