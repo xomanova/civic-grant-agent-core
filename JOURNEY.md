@@ -1,4 +1,4 @@
-# AHA Moments & Creative Solutions
+# Learning Moments in Building the Civic Grant Agent
 
 This document captures the lessons learned, unexpected behaviors discovered, and creative workarounds developed while building the Civic Grant Agent using Google ADK, CopilotKit, and the AG-UI protocol.
 
