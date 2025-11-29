@@ -64,6 +64,30 @@ I built a **custom OrchestratorAgent** that acts as a state machine. It monitors
 
 A **Grants-MCP sidecar container** provides an MCP interface to the **Simpler Grants API** (simpler.grants.gov), enabling direct federal grant searches from the official government database.
 
+### System Flow Diagram
+
+```mermaid
+graph LR
+    A[User Chat] --> B[Orchestrator Agent]
+    B --> C[ProfileCollector<br/>Web Search + Profile Tools]
+    C -->|civic_grant_profile| B
+    B --> D[GrantFinder<br/>Search + Eligibility Check]
+    D <-->|JSON-RPC| H[Grants-MCP Sidecar<br/>Simpler Grants API]
+    D -->|grants_for_display| E[Grant Cards UI]
+    E -->|User Clicks Grant| B
+    B --> F[GrantWriter<br/>Draft Generation]
+    F -->|grant_draft| G[Draft Viewer UI]
+    
+    style A fill:#e1f5ff
+    style B fill:#f0f0f0
+    style C fill:#fff3cd
+    style D fill:#d4edda
+    style F fill:#f8d7da
+    style E fill:#d1ecf1
+    style G fill:#d1ecf1
+    style H fill:#e8daef
+```
+
 ---
 
 ## Technical Implementation
