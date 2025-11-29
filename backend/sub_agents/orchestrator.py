@@ -1,7 +1,9 @@
+import logging
 from google.adk.agents import Agent, InvocationContext
 from google.adk.events import Event
 from typing import AsyncGenerator
-from pydantic import model_validator
+
+logger = logging.getLogger(__name__)
 
 def is_empty_text_event(event) -> bool:
     """Check if this is an empty text event that would crash AG-UI."""
@@ -57,21 +59,17 @@ class OrchestratorAgent(Agent):
         
         # Profile is complete if it has name, some location, and needs
         is_complete = has_name and has_location and has_needs
-        print(f"[DEBUG] Profile completeness check: name={has_name}, location={has_location}, needs={has_needs} => {is_complete}")
+        logger.debug(f"Profile check: name={has_name}, loc={has_location}, needs={has_needs} => {is_complete}")
         return is_complete
 
     async def _run_async_impl(self, ctx: InvocationContext) -> AsyncGenerator[Event, None]:
         state = ctx.session.state
         
-        print(f"\n[DEBUG] --- NEW REQUEST RECEIVED ---")
-        print(f"[DEBUG] Session State Keys: {list(state.keys())}")
-        print(f"[DEBUG] workflow_step from state: {state.get('workflow_step')}")
-        print(f"[DEBUG] profile_complete from state: {state.get('profile_complete')}")
+        workflow_step = state.get("workflow_step", "profile_building")
+        logger.debug(f"Request received - workflow: {workflow_step}")
         
         # Get profile from state - this persists across requests via AG-UI session
         civic_grant_profile = state.get("civic_grant_profile", {})
-        if isinstance(civic_grant_profile, dict):
-            print(f"[DEBUG] civic_grant_profile keys: {list(civic_grant_profile.keys())}")
         
         # CRITICAL: Check profile completeness from ACTUAL DATA, not from flags
         # This makes us resilient to state resets
@@ -83,40 +81,29 @@ class OrchestratorAgent(Agent):
             profile_is_actually_complete = self._check_profile_completeness(department_profile)
         
         # Determine workflow step based on actual profile state
-        workflow_step = state.get("workflow_step", "profile_building")
+        # (workflow_step already retrieved above)
         
         # GUARD: If profile IS complete, we should be in grant_scouting regardless of what state says
         if profile_is_actually_complete and workflow_step == "profile_building":
-            print("[DEBUG] GUARD HIT: Profile IS complete based on data. Advancing to grant_scouting.")
+            logger.debug("Profile complete - advancing to grant_scouting")
             workflow_step = "grant_scouting"
             state["workflow_step"] = "grant_scouting"
             state["profile_complete"] = True
-        
-        print(f"[DEBUG] Final routing decision: workflow_step={workflow_step}")
 
         # ==================================================================
         # STEP 1: PROFILE BUILDING
         # ==================================================================
         if workflow_step == "profile_building":
             profile_just_finished = False
-
-            print("[DEBUG] Starting Profile Agent Loop...")
             async for event in self.profile_agent.run_async(ctx):
                 # FIX: Filter out empty text events to prevent AG-UI crash
                 if is_empty_text_event(event):
-                    print(f"[DEBUG] Skipping empty text event to prevent frontend crash")
                     continue
-                
-                # Log outgoing event types
-                evt_type = "ToolCall" if (event.get_function_calls() or event.get_function_responses()) else "Text/Other"
-                print(f"[DEBUG] Yielding Event: {evt_type}")
                 
                 # Check for explicit Exit Tool usage
                 if event.get_function_calls():
                     for call in event.get_function_calls():
-                        print(f"[DEBUG] Tool Call Detected: {call.name}")
                         if call.name == "exit_profile_loop":
-                            print("[DEBUG] !!! EXIT TOOL DETECTED !!!")
                             # Force the state update right here if the tool didn't stick
                             ctx.session.state["profile_complete"] = True
                             profile_just_finished = True
@@ -125,16 +112,11 @@ class OrchestratorAgent(Agent):
                 
                 # Check state after every yield
                 if ctx.session.state.get("profile_complete"):
-                    print("[DEBUG] State 'profile_complete' is now TRUE.")
                     profile_just_finished = True
-
-            print(f"[DEBUG] Profile Agent Loop Ended. Just Finished? {profile_just_finished}")
-            print(f"[DEBUG] Current profile_complete state: {ctx.session.state.get('profile_complete')}")
 
             # TRANSITION LOGIC - Set state but DON'T auto-run finder
             # Let the user send a new message like "find grants" to trigger finder
             if profile_just_finished or ctx.session.state.get("profile_complete"):
-                print("[DEBUG] *** PROFILE COMPLETE - Setting workflow to grant_scouting ***")
                 state["workflow_step"] = "grant_scouting"
                 
                 # Ensure the profile is available in the key 'civic_grant_profile'
@@ -142,41 +124,24 @@ class OrchestratorAgent(Agent):
                     ctx.session.state["civic_grant_profile"] = ctx.session.state.get("department_profile", {})
                 
                 # DON'T auto-run finder here - the exit_profile_loop tool tells user to say "find grants"
-                # The next user message will come in with workflow_step="grant_scouting" and run finder
-                print("[DEBUG] Profile complete. Waiting for user to say 'find grants'")
                 return
             else:
-                print("[DEBUG] Returning to wait for user input (Profile incomplete).")
                 return
 
         # ==================================================================
         # STEP 2: GRANT FINDING (combined scout + validation)
         # ==================================================================
         elif workflow_step == "grant_scouting":
-            print("[DEBUG] Entering Grant Finder Logic.")
-            
             # Run finder agent - searches and validates grants
-            print("[DEBUG] Running Finder Agent...")
             async for event in self.finder_agent.run_async(ctx):
                 # Allow all events through (text + tool calls)
                 if is_empty_text_event(event):
-                    print(f"[DEBUG] Skipping empty text event from Finder")
                     continue
                 yield event
-            
-            # Finder saves grants to state via save_grants_to_state tool
-            # Check if grants were saved
-            validated_grants = ctx.session.state.get("validated_grants", [])
-            grants_for_display = ctx.session.state.get("grants_for_display", [])
-            
-            print(f"[DEBUG] After finder: validated_grants={len(validated_grants) if isinstance(validated_grants, list) else 'not a list'}")
-            print(f"[DEBUG] After finder: grants_for_display={len(grants_for_display) if isinstance(grants_for_display, list) else 'not a list'}")
             
             # Ensure workflow advances (tool should have set this, but double-check)
             if ctx.session.state.get("workflow_step") != "awaiting_grant_selection":
                 ctx.session.state["workflow_step"] = "awaiting_grant_selection"
-            
-            print("[DEBUG] Finder finished. Workflow set to awaiting_grant_selection")
             
             return
 
@@ -184,24 +149,17 @@ class OrchestratorAgent(Agent):
         # STEP 3.5: AWAITING GRANT SELECTION (idle state)
         # ==================================================================
         elif workflow_step == "awaiting_grant_selection":
-            print("[DEBUG] In awaiting_grant_selection - checking for selected grant...")
-            
             # Check if user has selected a grant
             selected_grant = ctx.session.state.get("selected_grant_for_writing")
             
             if selected_grant:
-                print(f"[DEBUG] User selected grant: {selected_grant.get('name', 'Unknown')}")
                 ctx.session.state["workflow_step"] = "grant_writing"
                 
                 # Immediately transition to grant writing
-                print("[DEBUG] Starting Grant Writer Agent...")
                 async for event in self.writer_agent.run_async(ctx):
                     if is_empty_text_event(event):
                         continue
                     yield event
-            else:
-                # No grant selected yet - user needs to click one in the UI
-                print("[DEBUG] No grant selected yet. Waiting for user selection via UI.")
             
             return
 
@@ -209,8 +167,6 @@ class OrchestratorAgent(Agent):
         # STEP 4: GRANT WRITING
         # ==================================================================
         elif workflow_step == "grant_writing":
-            print("[DEBUG] Entering Grant Writer Logic.")
-            
             # The grant writer uses save_grant_draft tool to save draft to state
             # We just need to pass through events and suppress the draft text from chat
             async for event in self.writer_agent.run_async(ctx):
@@ -230,19 +186,14 @@ class OrchestratorAgent(Agent):
                 
                 if has_text:
                     # Only yield short messages (acknowledgements), suppress long draft text
-                    # The draft is saved via the save_grant_draft tool
                     if len(event_text.strip()) < 200:
-                        print(f"[DEBUG] Yielding short message: {event_text[:100]}")
                         yield event
-                    else:
-                        print(f"[DEBUG] Suppressing draft text from chat (length: {len(event_text)})")
                 else:
                     # Non-text events (tool calls, tool responses) pass through
                     yield event
             
-            print("[DEBUG] Grant writer finished")
             return
 
         else:
-            print(f"[DEBUG] Unknown workflow_step: {workflow_step}")
+            logger.warning(f"Unknown workflow_step: {workflow_step}")
             return

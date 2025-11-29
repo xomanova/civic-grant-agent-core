@@ -86,6 +86,7 @@ ensure_secret() {
 ensure_secret "GOOGLE_API_KEY" "Enter Google API Key (for Gemini Model)"
 ensure_secret "GOOGLE_SEARCH_API_KEY" "Enter Google Search API Key (for Custom Search)"
 ensure_secret "GOOGLE_SEARCH_ENGINE_ID" "Enter Google Search Engine ID (CX)"
+ensure_secret "SIMPLER_GRANTS_API_KEY" "Enter Simpler Grants API Key (from https://api.simpler.grants.gov)"
 
 # Grant Cloud Run Service Account access to secrets
 # Note: This assumes the default compute service account is used. 
@@ -106,8 +107,12 @@ gcloud secrets add-iam-policy-binding GOOGLE_SEARCH_ENGINE_ID \
     --member="serviceAccount:${SERVICE_ACCOUNT}" \
     --role="roles/secretmanager.secretAccessor" --project=$PROJECT_ID --quiet 1>/dev/null || true
 
-# --- 2. BACKEND DEPLOYMENT (Cloud Run) ---
-echo -e "\n${BLUE}--- Step 1: Deploying Backend to Cloud Run ---${NC}"
+gcloud secrets add-iam-policy-binding SIMPLER_GRANTS_API_KEY \
+    --member="serviceAccount:${SERVICE_ACCOUNT}" \
+    --role="roles/secretmanager.secretAccessor" --project=$PROJECT_ID --quiet 1>/dev/null || true
+
+# --- 2. BACKEND DEPLOYMENT (Cloud Run with Sidecar) ---
+echo -e "\n${BLUE}--- Step 1: Deploying Backend to Cloud Run (with Grants MCP Sidecar) ---${NC}"
 
 # Ensure Artifact Registry Exists
 if ! gcloud artifacts repositories describe ${REPO_NAME} --location=${REGION} --quiet &>/dev/null; then

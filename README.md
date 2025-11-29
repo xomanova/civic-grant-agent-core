@@ -24,6 +24,24 @@ For many volunteer departments, grant research and writing can consume **20+ hou
 
 ---
 
+## 🚀 How to Use
+
+**Try it live at [civic-grant-agent.xomanova.io](https://civic-grant-agent.xomanova.io)**
+
+![Welcome Screen](assets/00_welcome_screen.png)
+
+The workflow is simple:
+
+1. **Tell us about your organization** - Chat with the agent to provide your department's information
+2. **Review matching grants** - The agent searches and displays grants you're eligible for
+3. **Generate a draft application** - Click any grant to have the agent write a professional application
+
+### Full Workflow Demo
+
+![Civic Grant Agent Workflow](assets/Civic%20Grant%20Agent.gif)
+
+---
+
 ## 🎯 Why This Project Exists
 
 ### The Civic Tech Gap
@@ -71,16 +89,22 @@ User Chat → Orchestrator → ProfileCollector → GrantFinder → GrantWriter 
 - **Features**: Enriches profiles with web search data, validates completeness
 - **Output**: Complete department profile stored in session state
 
+![Profile Building](assets/01_profile_building.png)
+
 ### Agent 2: GrantFinder (Scout + Validator)
 - **Tools**: Web Search, Eligibility Checker, State Filter
 - **Purpose**: Discovers grants and validates eligibility in one step
 - **Features**: State-based filtering, federal grant detection, match scoring (0-100%)
 - **Output**: Ranked grants displayed as interactive cards in the UI
 
+![Grant Selection](assets/02_grant_selection.png)
+
 ### Agent 3: GrantWriter (Drafter)
 - **Tools**: Save Draft
 - **Purpose**: Generates professional grant application narratives
 - **Output**: Complete grant draft displayed with rich markdown rendering
+
+![Grant Drafting](assets/03_grant_drafting.png)
 
 **State Management:** Session state syncs bidirectionally between backend and frontend via AG-UI Protocol. The frontend uses CopilotKit's `useCoAgent` hook for real-time state updates.
 

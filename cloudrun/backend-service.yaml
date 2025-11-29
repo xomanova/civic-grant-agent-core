@@ -11,10 +11,13 @@ spec:
       annotations:
         autoscaling.knative.dev/minScale: "0"
         autoscaling.knative.dev/maxScale: "10"
+        # Enable multi-container (sidecar) support
+        run.googleapis.com/container-dependencies: '{"backend":["grants-mcp"]}'
     spec:
       containerConcurrency: 80
       timeoutSeconds: 300
       containers:
+      # Main backend container
       - name: backend
         image: civic-grant-agent-backend
         ports:
@@ -40,10 +43,38 @@ spec:
               key: latest
         - name: BACKEND_URL
           value: "https://civic-grant-agent-core.xomanova.io"
+        # Point to the sidecar via localhost
+        - name: GRANTS_MCP_URL
+          value: "http://localhost:8081/mcp"
         resources:
           limits:
             cpu: "2"
             memory: 2Gi
+      # Grants MCP sidecar container
+      - name: grants-mcp
+        image: grants-mcp-sidecar
+        env:
+        - name: PORT
+          value: "8081"
+        - name: MCP_TRANSPORT
+          value: "http"
+        - name: SIMPLER_GRANTS_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: SIMPLER_GRANTS_API_KEY
+              key: latest
+        resources:
+          limits:
+            cpu: "1"
+            memory: 512Mi
+        # Startup probe to ensure sidecar is ready before main container starts
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          failureThreshold: 12
   traffic:
   - percent: 100
     latestRevision: true

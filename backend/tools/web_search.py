@@ -1,6 +1,9 @@
 import os
+import logging
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+
+logger = logging.getLogger(__name__)
 
 # ============================================================================
 # TOOL: Google Custom Search (Wrapper)
@@ -14,15 +17,13 @@ def search_web(query: str) -> str:
     Args:
         query: The search query string (e.g., "Morningslide Fire Department population")
     """
-    print(f"[Tool Call] search_web triggered with query: {query}")
-    
     try:
         # Get credentials from environment variables
         api_key = os.getenv("GOOGLE_SEARCH_API_KEY")
         cse_id = os.getenv("GOOGLE_SEARCH_ENGINE_ID")
         
         if not api_key or not cse_id:
-            print("[Critical] Missing API Key or Search Engine ID in env variables")
+            logger.error("Missing Google Search API credentials")
             return "Error: Google Search API credentials not configured."
 
         # Build the Custom Search service
@@ -32,7 +33,6 @@ def search_web(query: str) -> str:
         req = service.cse().list(q=query, cx=cse_id, num=3)
         
         # Add Referer header for API key restrictions
-        # Using the backend URL as the referrer
         referer = os.getenv("BACKEND_URL")
         if referer:
             req.headers["Referer"] = referer
@@ -42,7 +42,6 @@ def search_web(query: str) -> str:
         
         items = res.get('items', [])
         if not items:
-            print(f"[Tool Call] Search completed but returned 0 items.")
             return "Search completed, but no relevant results were found."
             
         # Format the results for the LLM
@@ -53,15 +52,11 @@ def search_web(query: str) -> str:
             link = item.get('link', 'No link')
             formatted_results.append(f"Title: {title}\nSnippet: {snippet}\nLink: {link}\n---")
             
-        result_str = "\n".join(formatted_results)
-        print(f"[Tool Call] Returning {len(formatted_results)} results.")
-        return result_str
+        return "\n".join(formatted_results)
 
     except HttpError as e:
-        error_msg = f"Google Search API Error: {e}"
-        print(f"[Tool Call Error] {error_msg}")
-        return error_msg
+        logger.error(f"Google Search API error: {e}")
+        return f"Google Search API Error: {e}"
     except Exception as e:
-        error_msg = f"Unexpected Search Error: {str(e)}"
-        print(f"[Tool Call Critical Error] {error_msg}")
-        return error_msg
+        logger.error(f"Search error: {e}")
+        return f"Unexpected Search Error: {str(e)}"

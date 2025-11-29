@@ -3,9 +3,7 @@ ADK Agent Configuration
 Defines the multi-agent system for grant finding and writing.
 """
 
-from google.adk.agents import Agent
 from google.genai import types
-import os
 from dotenv import load_dotenv
 
 # Import agent creators from sub_agents directory

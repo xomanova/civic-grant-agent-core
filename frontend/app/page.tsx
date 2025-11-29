@@ -105,7 +105,9 @@ function MainContent() {
       profile_complete: agentState.profile_complete,
       profile_keys: Object.keys(agentState.civic_grant_profile || {}),
       grants_count: agentState.grants_for_display?.length || 0,
-      grants_for_display: agentState.grants_for_display,
+      has_grants_for_display: !!agentState.grants_for_display,
+      grants_for_display_type: typeof agentState.grants_for_display,
+      grants_for_display_raw: agentState.grants_for_display,
       isLoading
     });
     localStorage.setItem("debug_agent_state", JSON.stringify(agentState));
