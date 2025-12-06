@@ -24,7 +24,7 @@ spec:
           protocol: TCP
         env:
         - name: BACKEND_URL
-          value: "http://civic-grant-agent-backend:8000/"
+          value: "http://civic-grant-agent-backend:8000"
         - name: NEXT_PUBLIC_API_URL
           value: "http://localhost:8000"
         - name: NODE_ENV

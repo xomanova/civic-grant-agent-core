@@ -28,6 +28,16 @@ spec:
             secretKeyRef:
               name: civic-grant-agent-secrets
               key: google-api-key
+        - name: GOOGLE_SEARCH_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: civic-grant-agent-secrets
+              key: google-search-api-key
+        - name: GOOGLE_SEARCH_ENGINE_ID
+          valueFrom:
+            secretKeyRef:
+              name: civic-grant-agent-secrets
+              key: google-search-engine-id
         - name: GEMINI_MODEL
           value: "gemini-2.0-flash"
         - name: PORT
@@ -50,4 +60,34 @@ spec:
             path: /health
             port: 8000
           initialDelaySeconds: 10
+          periodSeconds: 5
+      # Grants MCP Sidecar Container
+      - name: grants-mcp
+        image: grants-mcp-sidecar
+        ports:
+        - containerPort: 8081
+          name: http-mcp
+          protocol: TCP
+        env:
+        - name: PORT
+          value: "8081"
+        - name: MCP_TRANSPORT
+          value: "http"
+        - name: SIMPLER_GRANTS_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: civic-grant-agent-secrets
+              key: simpler-grants-api-key
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "50m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8081
+          initialDelaySeconds: 5
           periodSeconds: 5
