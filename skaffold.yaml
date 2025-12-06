@@ -14,7 +14,7 @@ build:
         dockerfile: Dockerfile
 manifests:
   rawYaml:
-    - k8s/deployment.yaml
+    - k8s/backend.yaml
     - k8s/service.yaml
     - k8s/secret.yaml
 deploy:
